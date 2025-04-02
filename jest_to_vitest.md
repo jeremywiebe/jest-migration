@@ -5,7 +5,6 @@ tags: [migration, js]
 
 Convert Jest tests to Vitest
 
-
 ```grit
 engine marzano(0.1)
 language js
@@ -350,4 +349,35 @@ describe('Repository component', () => {
     expect('value').toBe('value');
   });
 });
+```
+
+## Transform custom assertions
+
+```javascript
+declare global {
+// eslint-disable-next-line @typescript-eslint/no-namespace
+namespace jest {
+    interface Matchers<R> {
+        toEvaluateAs(
+            expected: number,
+            vars?: Variables,
+            functions?: ReadonlyArray<string>,
+        ): R;
+    }
+}
+```
+
+```javascript
+interface CustomMatchers<R = unknown> {
+    toEvaluateAs(
+        expected: number,
+        vars?: Variables,
+        functions?: ReadonlyArray<string>,
+    ): R;
+}
+
+declare module "vitest" {
+    interface Assertion<T = any> extends CustomMatchers<T> {}
+    interface AsymmetricMatchersContaining extends CustomMatchers {}
+}
 ```

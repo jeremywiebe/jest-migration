@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 
-# Identifies the path that the script is in (http://stackoverflow.com/a/246128/11807)
-MYPATH=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
-
 pushd "${1:?usage: jest_to_vitest.sh <project-dir>}" || exit 1
 
+# Reset world
 git mc
 
-grit apply ../jest_to_vitest.md && pnpm format
+# Apply Grit transforms
+grit apply ../jest_to_vitest.md && pnpm format && pnpm lint --fix
+
+# Delete snapshots because Vitest can regenerate them and that gives us a
+# cleaner diff (instead of leaving stale Jest snapshots because the "titling"
+# doesn't match).
+git ls-files | grep '.*\.snap' | xargs rm -rf
+pnpm test -u # update snapshots
