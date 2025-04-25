@@ -27,7 +27,8 @@ pattern adjust_imports_vitest() {
         `beforeAll`,
         `afterAll`,
         `jest`,
-        `vi`
+        `vi`,
+        `advanceTimersByTime`
       } where {
         // Filter out methods which are imported from mocha
         $sym <: not imported_from(from = $mocha),
@@ -108,6 +109,22 @@ pattern main_jest_to_vitest_migration() {
           // when `callback` is already a function, we don't need to do the migration
         }
       },
+
+      // test.failing() => test.fails()
+      `$sym.failing($args)` => `$sym.fails($args)` where {
+        $sym <: or { `test`, `it` },
+      },
+
+      // jest.Mock => Mock (and add vitest import)
+      `jest.Mock` where {
+        $sym = "Mock",
+        $sym <: ensure_import_from(`"vitest"`)
+      } => `Mock`,
+
+      `jest.SpyInstance` where {
+        $sym = "MockInstance",
+        $sym <: ensure_import_from(`"vitest"`)
+      } => `MockInstance`,
 
       // Custom matchers (extensions)
       // Delete the jest return type (Vitest can infer it)
