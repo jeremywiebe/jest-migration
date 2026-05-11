@@ -76,6 +76,26 @@ pattern main_jest_to_vitest_migration() {
 
       `...jest.requireActual($module)` => `...(await vi.importActual($module))`,
       `jest.requireActual($module)` => `await vi.importActual($module)`,
+
+      // jest.{Mock,MockedFunction,Mocked,MockedClass,MockedObject} => bare name + vitest import
+      `jest.$sym` where {
+        $sym <: or {
+          `Mock`,
+          `MockedFunction`,
+          `Mocked`,
+          `MockedClass`,
+          `MockedObject`
+        },
+        $sym <: ensure_import_from(`"vitest"`)
+      } => $sym,
+
+      // jest.SpyInstance => MockInstance + vitest import (renamed in vitest)
+      `jest.SpyInstance` where {
+        $sym = "MockInstance",
+        $sym <: ensure_import_from(`"vitest"`)
+      } => `MockInstance`,
+
+      // Catch-all: any other jest.$sym => vi.$sym
       `jest.$sym` => `vi.$sym` where {
         $sym <: not `CustomMatcherResult`
       },
@@ -113,17 +133,6 @@ pattern main_jest_to_vitest_migration() {
       `$sym.failing($args)` => `$sym.fails($args)` where {
         $sym <: or { `test`, `it` },
       },
-
-      // jest.Mock => Mock (and add vitest import)
-      `jest.Mock` where {
-        $sym = "Mock",
-        $sym <: ensure_import_from(`"vitest"`)
-      } => `Mock`,
-
-      `jest.SpyInstance` where {
-        $sym = "MockInstance",
-        $sym <: ensure_import_from(`"vitest"`)
-      } => `MockInstance`,
 
       // Custom matchers (extensions)
       // Delete the jest return type (Vitest can infer it)
