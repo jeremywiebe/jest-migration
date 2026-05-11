@@ -27,8 +27,7 @@ pattern adjust_imports_vitest() {
         `beforeAll`,
         `afterAll`,
         `jest`,
-        `vi`,
-        `advanceTimersByTime`
+        `vi`
       } where {
         // Filter out methods which are imported from mocha
         $sym <: not imported_from(from = $mocha),
