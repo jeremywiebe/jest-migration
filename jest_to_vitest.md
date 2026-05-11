@@ -5,6 +5,12 @@ tags: [migration, js]
 
 Convert Jest tests to Vitest
 
+## Known limitations — handle by hand after running
+
+- **Destructured type imports from `'@jest/globals'`** (e.g. `import { Mock, MockedFunction } from '@jest/globals'` used purely as types) are not preserved. The script deletes the whole `import ... from '@jest/globals'` line and the auto-import pass only re-adds named symbols that appear as **call expressions** (`describe(...)`, `expect(...)`, …). Bare type references like `let m: Mock = ...` will be orphaned. After running the codemod, `tsc` will surface these as "Cannot find name 'Mock'" — fix by adding `import { Mock } from 'vitest'` (the names map 1:1 except `SpyInstance → MockInstance`, which the script already rewrites). Namespaced usages like `jest.Mock` are fully handled.
+- **Multi-parameter `done` callbacks** (`(done, fail) => { ... }`) get wrapped as `new Promise((done, fail) => { ... })`, but only the first parameter is used by Vitest's Promise contract. Rare; flag if hit.
+- **`namespace jest { interface Expect { ... } }`** (asymmetric custom matchers) is not handled — only `interface Matchers<R>` is rewritten. Less common; hand-fix if encountered.
+
 ```grit
 engine marzano(0.1)
 language js
