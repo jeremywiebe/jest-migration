@@ -76,6 +76,8 @@ pattern main_jest_to_vitest_migration() {
 
       `...jest.requireActual($module)` => `...(await vi.importActual($module))`,
       `jest.requireActual($module)` => `await vi.importActual($module)`,
+      `...jest.requireMock($module)` => `...(await vi.importMock($module))`,
+      `jest.requireMock($module)` => `await vi.importMock($module)`,
 
       // jest.{Mock,MockedFunction,Mocked,MockedClass,MockedObject} => bare name + vitest import
       `jest.$sym` where {
