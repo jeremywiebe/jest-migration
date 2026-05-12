@@ -195,9 +195,9 @@ pattern main_jest_to_vitest_migration() {
         // by default, so we emit eslint-disable-next-line comments to suppress
         // the warning at the source rather than relaxing the rule project-wide.
         $decl += `;\n\ndeclare module 'vitest' {
-            // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+            // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- vitest custom matcher augmentation
             interface Assertion<T = any> extends CustomMatchers<T> {}
-            // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+            // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- vitest custom matcher augmentation
             interface AsymmetricMatchersContaining extends CustomMatchers {}
         }`
       }
