@@ -48,6 +48,11 @@ pattern adjust_imports_vitest() {
         // level, not runtime. Type-tests should keep their tstyche imports intact.)
         $sym <: not imported_from(from = `'tstyche'`),
         $sym <: not imported_from(from = `"tstyche"`),
+        // Filter out methods imported from storybook/test (Storybook's test utility
+        // package re-exports describe/it/expect/within and is used in regression
+        // *.stories.tsx files alongside vitest in the same workspace.)
+        $sym <: not imported_from(from = `'storybook/test'`),
+        $sym <: not imported_from(from = `"storybook/test"`),
         // Skip symbols already imported from vitest. `ensure_import_from` (the
         // marzano stdlib helper used below) does not dedupe within an existing
         // named-import list, so without this guard a file like vite-test-setup.ts
@@ -116,8 +121,14 @@ pattern main_jest_to_vitest_migration() {
         $sym <: ensure_import_from(`"vitest"`)
       } => $sym,
 
-      // jest.SpyInstance => MockInstance + vitest import (renamed in vitest)
-      `jest.SpyInstance` where {
+      // jest.SpyInstance / jest.SpiedFunction => MockInstance + vitest import.
+      // Both Jest type names map to vitest's MockInstance. Without this rule the
+      // catch-all below rewrites `jest.SpiedFunction` to `vi.SpiedFunction`, which
+      // is invalid since `vi` is imported as a value, not a namespace.
+      or {
+        `jest.SpyInstance`,
+        `jest.SpiedFunction`,
+      } where {
         $sym = "MockInstance",
         $sym <: ensure_import_from(`"vitest"`)
       } => `MockInstance`,
@@ -160,6 +171,10 @@ pattern main_jest_to_vitest_migration() {
       `$sym.failing($args)` => `$sym.fails($args)` where {
         $sym <: or { `test`, `it` },
       },
+
+      // .mockImplementation() with no args is valid in Jest (returns undefined)
+      // but Vitest's typings require an explicit implementation function.
+      `$expr.mockImplementation()` => `$expr.mockImplementation(() => {})`,
 
       // Custom matchers (extensions)
       // Delete the jest return type (Vitest can infer it)
