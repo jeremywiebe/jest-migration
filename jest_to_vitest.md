@@ -23,6 +23,7 @@ pattern adjust_imports_vitest() {
     } where {
       $program <: program($statements),
       $mocha = `'mocha'`,
+      $tstyche = `'tstyche'`,
       $sym <: or {
         `test`,
         `expect`,
@@ -37,6 +38,10 @@ pattern adjust_imports_vitest() {
       } where {
         // Filter out methods which are imported from mocha
         $sym <: not imported_from(from = $mocha),
+        // Filter out methods which are imported from tstyche (TypeScript type-testing library
+        // whose API overlaps with Jest/Vitest — describe/it/expect — but operates at the type
+        // level, not runtime. Type-tests should keep their tstyche imports intact.)
+        $sym <: not imported_from(from = $tstyche),
         // Filter out methods which are imported as default from any module
         $statements <: not contains or {
           `import $sym from $_`,
