@@ -189,8 +189,15 @@ pattern main_jest_to_vitest_migration() {
         $mod <: within ambient_declaration() as $decl,
         $iface <: interface_declaration(name="Matchers", $body) => `interface CustomMatchers<R = unknown> $body`,
         $decl => $iface,
+        // The two `interface ... extends X {}` lines below are the vitest-
+        // documented form for custom-matcher module augmentation. Empty
+        // single-extends interfaces violate @typescript-eslint/no-empty-object-type
+        // by default, so we emit eslint-disable-next-line comments to suppress
+        // the warning at the source rather than relaxing the rule project-wide.
         $decl += `;\n\ndeclare module 'vitest' {
+            // eslint-disable-next-line @typescript-eslint/no-empty-object-type
             interface Assertion<T = any> extends CustomMatchers<T> {}
+            // eslint-disable-next-line @typescript-eslint/no-empty-object-type
             interface AsymmetricMatchersContaining extends CustomMatchers {}
         }`
       }
