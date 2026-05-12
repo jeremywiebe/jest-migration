@@ -20,10 +20,12 @@ pattern adjust_imports_vitest() {
     $body <: or {
       `$sym.$_($_)`,
       `$sym($_)`,
+      // Also match bare property accesses like `vi.advanceTimersByTime`
+      // (used as a value, not invoked). Without this, `vi` is not
+      // auto-imported when only referenced via property access.
+      `$sym.$_`,
     } where {
       $program <: program($statements),
-      $mocha = `'mocha'`,
-      $tstyche = `'tstyche'`,
       $sym <: or {
         `test`,
         `expect`,
@@ -36,12 +38,24 @@ pattern adjust_imports_vitest() {
         `jest`,
         `vi`
       } where {
-        // Filter out methods which are imported from mocha
-        $sym <: not imported_from(from = $mocha),
+        // Filter out methods which are imported from mocha.
+        // `imported_from` compares the `from` clause syntactically (quote style
+        // included), so we check both single- and double-quoted forms.
+        $sym <: not imported_from(from = `'mocha'`),
+        $sym <: not imported_from(from = `"mocha"`),
         // Filter out methods which are imported from tstyche (TypeScript type-testing library
         // whose API overlaps with Jest/Vitest — describe/it/expect — but operates at the type
         // level, not runtime. Type-tests should keep their tstyche imports intact.)
-        $sym <: not imported_from(from = $tstyche),
+        $sym <: not imported_from(from = `'tstyche'`),
+        $sym <: not imported_from(from = `"tstyche"`),
+        // Skip symbols already imported from vitest. `ensure_import_from` (the
+        // marzano stdlib helper used below) does not dedupe within an existing
+        // named-import list, so without this guard a file like vite-test-setup.ts
+        // (which pre-imports `vi`, `afterEach`) ends up with
+        // `import {afterEach, vi, vi, afterEach} from "vitest";`. This guard
+        // also makes the codemod idempotent on already-migrated files.
+        $sym <: not imported_from(from = `'vitest'`),
+        $sym <: not imported_from(from = `"vitest"`),
         // Filter out methods which are imported as default from any module
         $statements <: not contains or {
           `import $sym from $_`,
