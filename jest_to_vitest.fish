@@ -7,8 +7,8 @@
 #   rstest-compat  Rewrite only module mocks, for Rstest with a `jest`
 #                  compatibility layer (`jest_to_rstest_compat`).
 #
-# Then it formats and lint-fixes the repo, and deletes its snapshot files so
-# the new test runner writes them afresh.
+# Then it formats and lint-fixes the files it changed, and deletes the repo's
+# snapshot files so the new test runner writes them afresh.
 
 set -l usage "Usage: "(status basename)" <full|vitest-compat|rstest-compat> [repo-dir]"
 set -l patterns (path resolve (status dirname))/.grit/patterns
@@ -48,10 +48,22 @@ end
 grit apply $patterns/$pattern.md; or exit 1
 
 # The patterns insert imports without regard to the repo's style or import
-# order, so format and lint-fix to put them right. Lint may still report
-# problems it can't fix; those are left for a person.
-pnpm format; or exit 1
-pnpm lint --fix
+# order, so format and lint-fix the files they changed to put them right.
+# Only those files: linting a whole repo can take minutes. Lint may still
+# report problems it can't fix; those are left for a person.
+set -l changed (git diff --name-only)
+if set -q changed[1]
+    if test -x node_modules/.bin/oxfmt
+        pnpm exec oxfmt $changed; or exit 1
+    else
+        pnpm exec prettier --write $changed; or exit 1
+    end
+    if test -x node_modules/.bin/oxlint
+        pnpm exec oxlint --fix $changed
+    else
+        pnpm exec eslint --fix $changed
+    end
+end
 
 # Snapshot names and headers differ between test runners, so let the new
 # runner write the snapshot files afresh instead of mixing in stale ones.
