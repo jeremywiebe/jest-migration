@@ -439,6 +439,7 @@ namespace jest {
         ): R;
     }
 }
+}
 ```
 
 ```javascript
@@ -451,7 +452,9 @@ interface CustomMatchers<R = unknown> {
 }
 
 declare module "vitest" {
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- vitest custom matcher augmentation
     interface Assertion<T = any> extends CustomMatchers<T> {}
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- vitest custom matcher augmentation
     interface AsymmetricMatchersContaining extends CustomMatchers {}
 }
 ```
