@@ -12,6 +12,20 @@ calls, so module mocks must use `vi` by name. Vitest also has no synchronous
 `requireActual`: `vi.importActual()` returns a promise, so a mock factory
 that loads the real module becomes `async`.
 
+Vitest's `require()` is Node's own, so it can't load TypeScript sources or
+resolve the aliases Vitest's own imports use. `require()` calls become
+`await import()`, and the arrow function that holds them becomes `async`. A
+helper made `async` this way is awaited where the same file calls it, and
+the arrow function around that call becomes `async` too.
+
+Two Jest APIs have no Vitest counterpart under the same name:
+
+- `test.failing()` and `it.failing()` become `test.fails()` and `it.fails()`.
+- `jest.replaceProperty(process.env, name, value)` becomes
+  `vi.stubEnv(name, value)`. Jest restores replaced properties when
+  `restoreMocks` is on. Vitest restores stubbed variables only with
+  `unstubEnvs: true` in its config.
+
 Everything else (`jest.fn`, `jest.spyOn`, fake timers, `@jest/globals`
 imports) is left for the compatibility layer: a setup file that defines
 `globalThis.jest` on top of `vi`, and a config alias that points
@@ -24,6 +38,13 @@ imports) is left for the compatibility layer: a setup file that defines
   a function that isn't `async` it's a syntax error.
 - **`jest.createMockFromModule()`, `jest.isolateModules()` and
   `jest.setMock()`** aren't rewritten. They have no direct `vi` equivalent.
+- **`jest.replaceProperty()` on anything but `process.env`** isn't rewritten.
+  Vitest has no `replaceProperty`.
+- **`require()` is rewritten only inside arrow functions**, and a helper made
+  `async` is awaited only one call deep, in the file that declares it. A
+  `require()` in a `function`, or a caller of a caller, is left for a person.
+- **`await import()` returns the module namespace.** For a CommonJS module
+  that assigns `module.exports`, use its `default` export.
 - **A `verifyRealTimers()` function** (in a `wait()` test helper) is
   replaced by name with a check on `vi.isFakeTimers()`. Jest has no
   `isFakeTimers()`, so the rewritten helper runs only under Vitest.
@@ -46,6 +67,13 @@ pattern jest_mocks_to_vitest() {
         );
     }
 }`
+      },
+
+      // Vitest has no `replaceProperty`; for `process.env` it has `stubEnv`.
+      `jest.replaceProperty(process.env, $name, $value)` => `vi.stubEnv($name, $value)`,
+
+      `$runner.failing` => `$runner.fails` where {
+        $runner <: or { `test`, `it` }
       },
 
       // A mock factory that loads the real module becomes async, since
@@ -75,6 +103,50 @@ pattern jest_mocks_to_vitest() {
   }
 }
 
+// The innermost arrow function that calls `require()` becomes async, and its
+// `require()` calls become `await import()`.
+pattern require_to_import() {
+  arrow_function(body=$body) as $fn where {
+    $body <: contains `require($_)`,
+    $body <: not contains arrow_function(body=$inner) where {
+      $inner <: contains `require($_)`
+    },
+    $body <: contains bubble or {
+      `require($module).$prop` => `(await import($module)).$prop`,
+      `require($module)` => `await import($module)`,
+    },
+    if ($fn <: not r"(?s)async\b.*") {
+      $fn => `async $fn`
+    }
+  }
+}
+
+// A helper that `require_to_import()` made async is awaited where the same
+// file calls it, and the innermost arrow function around that call becomes
+// async too.
+pattern await_async_import_helpers() {
+  file($body) where {
+    $body <: contains `const $helper = $helperFn` where {
+      $helperFn <: arrow_function(),
+      $helperFn <: r"(?s)async\b.*",
+      $helperFn <: contains `await import($_)`
+    },
+    $body <: contains bubble($helper) arrow_function(body=$callerBody) as $caller where {
+      $callerBody <: contains call_expression(function=$helper),
+      $callerBody <: not contains arrow_function(body=$inner) where {
+        $inner <: contains call_expression(function=$helper)
+      },
+      $callerBody <: contains bubble($helper) call_expression(function=$helper) as $call where {
+        $call <: not within `await $_`,
+        $call => `await $call`
+      },
+      if ($caller <: not r"(?s)async\b.*") {
+        $caller => `async $caller`
+      }
+    }
+  }
+}
+
 pattern import_vi_from_vitest() {
   `$sym.$_` where {
     $sym <: `vi`,
@@ -87,6 +159,8 @@ pattern import_vi_from_vitest() {
 
 sequential {
   maybe jest_mocks_to_vitest(),
+  maybe contains require_to_import(),
+  maybe await_async_import_helpers(),
   maybe contains import_vi_from_vitest(),
 }
 ```
@@ -220,4 +294,90 @@ const verifyRealTimers = () => {
         );
     }
 };
+```
+
+## Rewrite replaceProperty on process.env to stubEnv
+
+```javascript
+jest.replaceProperty(process.env, "NODE_ENV", "production");
+jest.replaceProperty(window, "innerWidth", 100);
+```
+
+```javascript
+import { vi } from "vitest";
+
+vi.stubEnv("NODE_ENV", "production");
+jest.replaceProperty(window, "innerWidth", 100);
+```
+
+## Rewrite failing tests to fails
+
+```javascript
+test.failing("throws", () => {
+    expect(true).toBe(false);
+});
+it.failing("throws too", () => {
+    expect(true).toBe(false);
+});
+```
+
+```javascript
+test.fails("throws", () => {
+    expect(true).toBe(false);
+});
+it.fails("throws too", () => {
+    expect(true).toBe(false);
+});
+```
+
+## Rewrite require in a test to await import
+
+```javascript
+describe("the barrel", () => {
+    it("loads", () => {
+        jest.resetModules();
+        const barrel = require("./index");
+        const { default: logic } = require(`./widgets/${name}`);
+        const value = require("./value").value;
+        expect(barrel.value).toBe(value);
+    });
+});
+```
+
+```javascript
+describe("the barrel", () => {
+    it("loads", async () => {
+        jest.resetModules();
+        const barrel = await import("./index");
+        const { default: logic } = await import(`./widgets/${name}`);
+        const value = (await import("./value")).value;
+        expect(barrel.value).toBe(value);
+    });
+});
+```
+
+## Await a helper that now imports
+
+```javascript
+const runCli = (args) => {
+    process.argv = ["node", "cli.ts", ...args];
+    require("../cli");
+};
+
+it("shows help", () => {
+    runCli(["--help"]);
+    expect(log).toHaveBeenCalled();
+});
+```
+
+```javascript
+const runCli = async (args) => {
+    process.argv = ["node", "cli.ts", ...args];
+    await import("../cli");
+};
+
+it("shows help", async () => {
+    await runCli(["--help"]);
+    expect(log).toHaveBeenCalled();
+});
 ```
