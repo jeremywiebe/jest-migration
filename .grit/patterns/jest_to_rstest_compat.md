@@ -10,7 +10,16 @@ unchanged.
 Rstest hoists `rs.mock()` calls above the imports, but not `jest.mock()`
 calls, so module mocks must use `rs` by name. Rstest's `requireActual` and
 `requireMock` are synchronous, like Jest's, so mock factories stay as they
-are.
+are. Rstest also transforms `rs.resetModules()` calls, so those must use `rs`
+by name too.
+
+Two Jest APIs have no Rstest counterpart under the same name:
+
+- `test.failing()` and `it.failing()` become `test.fails()` and `it.fails()`.
+- `jest.replaceProperty(process.env, name, value)` becomes
+  `rs.stubEnv(name, value)`. Jest restores replaced properties when
+  `restoreMocks` is on. Rstest restores stubbed variables only with
+  `unstubEnvs: true` in its config.
 
 Everything else (`jest.fn`, `jest.spyOn`, fake timers, `@jest/globals`
 imports) is left for the compatibility layer: a setup file that defines
@@ -21,6 +30,11 @@ imports) is left for the compatibility layer: a setup file that defines
 
 - **`jest.createMockFromModule()`, `jest.isolateModules()` and
   `jest.setMock()`** aren't rewritten. They have no direct `rs` equivalent.
+- **`jest.replaceProperty()` on anything but `process.env`** isn't rewritten.
+  Rstest has no `replaceProperty`.
+- **An inserted `rs` import can leave a blank line inside an import group**
+  when it sorts directly above an import with a leading comment (such as an
+  `eslint-disable-next-line`): `import/order` won't fix across the comment.
 
 ```grit
 engine marzano(0.1)
@@ -28,19 +42,30 @@ language js
 
 pattern jest_mocks_to_rstest() {
   file($body) where {
-    $body <: contains bubble `jest.$method` where {
-      $method <: or {
-        // Rstest hoists only calls on `rs`.
-        `mock`,
-        `doMock`,
-        `unmock`,
-        `doUnmock`,
-        // Called inside a mock factory, these must use `rs` too: the factory
-        // runs while the hoisted mocks are set up.
-        `requireActual`,
-        `requireMock`
-      }
-    } => `rs.$method`
+    $body <: contains bubble or {
+      // Rstest has no `replaceProperty`; for `process.env` it has `stubEnv`.
+      `jest.replaceProperty(process.env, $name, $value)` => `rs.stubEnv($name, $value)`,
+
+      `jest.$method` where {
+        $method <: or {
+          // Rstest hoists only calls on `rs`.
+          `mock`,
+          `doMock`,
+          `unmock`,
+          `doUnmock`,
+          // Called inside a mock factory, these must use `rs` too: the
+          // factory runs while the hoisted mocks are set up.
+          `requireActual`,
+          `requireMock`,
+          // Rstest transforms these calls, so they must use `rs` by name.
+          `resetModules`
+        }
+      } => `rs.$method`,
+
+      `$runner.failing` => `$runner.fails` where {
+        $runner <: or { `test`, `it` }
+      },
+    }
   }
 }
 
@@ -147,5 +172,55 @@ describe("thing", () => {
     it("works", () => {
         expect(jest.fn()).not.toHaveBeenCalled();
     });
+});
+```
+
+## Rewrite resetModules to rs
+
+```javascript
+beforeEach(() => {
+    jest.resetModules();
+});
+```
+
+```javascript
+import { rs } from "@rstest/core";
+
+beforeEach(() => {
+    rs.resetModules();
+});
+```
+
+## Rewrite replaceProperty on process.env to stubEnv
+
+```javascript
+jest.replaceProperty(process.env, "NODE_ENV", "production");
+jest.replaceProperty(window, "innerWidth", 100);
+```
+
+```javascript
+import { rs } from "@rstest/core";
+
+rs.stubEnv("NODE_ENV", "production");
+jest.replaceProperty(window, "innerWidth", 100);
+```
+
+## Rewrite failing tests to fails
+
+```javascript
+test.failing("throws", () => {
+    expect(true).toBe(false);
+});
+it.failing("throws too", () => {
+    expect(true).toBe(false);
+});
+```
+
+```javascript
+test.fails("throws", () => {
+    expect(true).toBe(false);
+});
+it.fails("throws too", () => {
+    expect(true).toBe(false);
 });
 ```
