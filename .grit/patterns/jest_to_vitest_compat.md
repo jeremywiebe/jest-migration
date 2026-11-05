@@ -24,6 +24,9 @@ imports) is left for the compatibility layer: a setup file that defines
   a function that isn't `async` it's a syntax error.
 - **`jest.createMockFromModule()`, `jest.isolateModules()` and
   `jest.setMock()`** aren't rewritten. They have no direct `vi` equivalent.
+- **A `verifyRealTimers()` function** (in a `wait()` test helper) is
+  replaced by name with a check on `vi.isFakeTimers()`. Jest has no
+  `isFakeTimers()`, so the rewritten helper runs only under Vitest.
 
 ```grit
 engine marzano(0.1)
@@ -32,6 +35,19 @@ language js
 pattern jest_mocks_to_vitest() {
   file($body) where {
     $body <: contains bubble or {
+      // A `wait()` helper may detect fake timers by calling
+      // `jest.getTimerCount()` with real timers in place. Replace that check
+      // with the runner's own.
+      `const verifyRealTimers = $check` where {
+        $check => `() => {
+    if (vi.isFakeTimers()) {
+        throw new Error(
+            "Cannot use wait() with fake timers. Call jest.useRealTimers() in test case or in a beforeEach.",
+        );
+    }
+}`
+      },
+
       // A mock factory that loads the real module becomes async, since
       // `vi.importActual()` returns a promise.
       `jest.$method($module, $factory)` where {
@@ -169,4 +185,39 @@ describe("thing", () => {
         expect(jest.fn()).not.toHaveBeenCalled();
     });
 });
+```
+
+## Replace a wait() helper's fake-timer check with isFakeTimers
+
+```javascript
+const verifyRealTimers = () => {
+    const oldWarn = console.warn;
+    console.warn = () => {};
+
+    try {
+        const timerCount = jest.getTimerCount();
+        const timeoutID = setTimeout(() => {}, 0);
+        const newTimerCount = jest.getTimerCount();
+        clearTimeout(timeoutID);
+        if (timerCount !== newTimerCount) {
+            throw new Error(
+                "Cannot use wait() with fake timers. Call jest.useRealTimers() in test case or in a beforeEach.",
+            );
+        }
+    } finally {
+        console.warn = oldWarn;
+    }
+};
+```
+
+```javascript
+import { vi } from "vitest";
+
+const verifyRealTimers = () => {
+    if (vi.isFakeTimers()) {
+        throw new Error(
+            "Cannot use wait() with fake timers. Call jest.useRealTimers() in test case or in a beforeEach.",
+        );
+    }
+};
 ```

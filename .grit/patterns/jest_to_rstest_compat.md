@@ -32,6 +32,9 @@ imports) is left for the compatibility layer: a setup file that defines
   `jest.setMock()`** aren't rewritten. They have no direct `rs` equivalent.
 - **`jest.replaceProperty()` on anything but `process.env`** isn't rewritten.
   Rstest has no `replaceProperty`.
+- **A `verifyRealTimers()` function** (in a `wait()` test helper) is
+  replaced by name with a check on `rs.isFakeTimers()`. Jest has no
+  `isFakeTimers()`, so the rewritten helper runs only under Rstest.
 - **An inserted `rs` import can leave a blank line inside an import group**
   when it sorts directly above an import with a leading comment (such as an
   `eslint-disable-next-line`): `import/order` won't fix across the comment.
@@ -43,6 +46,19 @@ language js
 pattern jest_mocks_to_rstest() {
   file($body) where {
     $body <: contains bubble or {
+      // A `wait()` helper may detect fake timers by calling
+      // `jest.getTimerCount()` with real timers in place. Replace that check
+      // with the runner's own.
+      `const verifyRealTimers = $check` where {
+        $check => `() => {
+    if (rs.isFakeTimers()) {
+        throw new Error(
+            "Cannot use wait() with fake timers. Call jest.useRealTimers() in test case or in a beforeEach.",
+        );
+    }
+}`
+      },
+
       // Rstest has no `replaceProperty`; for `process.env` it has `stubEnv`.
       `jest.replaceProperty(process.env, $name, $value)` => `rs.stubEnv($name, $value)`,
 
@@ -223,4 +239,39 @@ test.fails("throws", () => {
 it.fails("throws too", () => {
     expect(true).toBe(false);
 });
+```
+
+## Replace a wait() helper's fake-timer check with isFakeTimers
+
+```javascript
+const verifyRealTimers = () => {
+    const oldWarn = console.warn;
+    console.warn = () => {};
+
+    try {
+        const timerCount = jest.getTimerCount();
+        const timeoutID = setTimeout(() => {}, 0);
+        const newTimerCount = jest.getTimerCount();
+        clearTimeout(timeoutID);
+        if (timerCount !== newTimerCount) {
+            throw new Error(
+                "Cannot use wait() with fake timers. Call jest.useRealTimers() in test case or in a beforeEach.",
+            );
+        }
+    } finally {
+        console.warn = oldWarn;
+    }
+};
+```
+
+```javascript
+import { rs } from "@rstest/core";
+
+const verifyRealTimers = () => {
+    if (rs.isFakeTimers()) {
+        throw new Error(
+            "Cannot use wait() with fake timers. Call jest.useRealTimers() in test case or in a beforeEach.",
+        );
+    }
+};
 ```
