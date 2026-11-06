@@ -40,7 +40,8 @@ imports) is left for the compatibility layer: a setup file that defines
   `jest.setMock()`** aren't rewritten. They have no direct `vi` equivalent.
 - **`jest.replaceProperty()` on anything but `process.env`** isn't rewritten.
   Vitest has no `replaceProperty`.
-- **`require()` is rewritten only inside arrow functions**, and a helper made
+- **`require()` is rewritten only in test files** (files that call
+  `describe()`, `it()` or `test()`) **and only inside arrow functions**, and a helper made
   `async` is awaited only one call deep, in the file that declares it. A
   `require()` in a `function`, or a caller of a caller, is left for a person.
 - **`await import()` returns the module namespace.** For a CommonJS module
@@ -157,10 +158,18 @@ pattern import_vi_from_vitest() {
   }
 }
 
+// Only test files: a script's `require()` calls are left alone, since making
+// its callbacks async would change what it does.
+pattern test_file() {
+  file($body) where {
+    $body <: contains or { `describe($_, $_)`, `it($_, $_)`, `test($_, $_)` }
+  }
+}
+
 sequential {
   maybe jest_mocks_to_vitest(),
-  maybe contains require_to_import(),
-  maybe await_async_import_helpers(),
+  maybe and { test_file(), contains require_to_import() },
+  maybe and { test_file(), await_async_import_helpers() },
   maybe contains import_vi_from_vitest(),
 }
 ```
@@ -379,5 +388,21 @@ const runCli = async (args) => {
 it("shows help", async () => {
     await runCli(["--help"]);
     expect(log).toHaveBeenCalled();
+});
+```
+
+## Leave require in a script alone
+
+```javascript
+const packages = paths.map((path) => {
+    const pkg = require(path);
+    return pkg.name;
+});
+```
+
+```javascript
+const packages = paths.map((path) => {
+    const pkg = require(path);
+    return pkg.name;
 });
 ```
