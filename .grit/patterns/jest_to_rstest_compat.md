@@ -35,6 +35,11 @@ imports) is left for the compatibility layer: a setup file that defines
 - **A `verifyRealTimers()` function** (in a `wait()` test helper) is
   replaced by name with a check on `rs.isFakeTimers()`. Jest has no
   `isFakeTimers()`, so the rewritten helper runs only under Rstest.
+- **An `inJest` flag is renamed `inTest`** by name, wherever it's
+  declared, imported or used.
+- **`JEST_WORKER_ID` becomes `RSTEST_WORKER_ID` everywhere**, in production code
+  too, so code that detects a test run keeps working under Rstest. It then
+  no longer detects a Jest run.
 - **An inserted `rs` import can leave a blank line inside an import group**
   when it sorts directly above an import with a leading comment (such as an
   `eslint-disable-next-line`): `import/order` won't fix across the comment.
@@ -58,6 +63,14 @@ pattern jest_mocks_to_rstest() {
     }
 }`
       },
+
+      // Code that detects a test run by Jest's worker variable checks
+      // Rstest's instead.
+      `JEST_WORKER_ID` => `RSTEST_WORKER_ID`,
+
+      // An `inJest` flag that checks that variable no longer means
+      // Jest only.
+      `inJest` => `inTest`,
 
       // Rstest has no `replaceProperty`; for `process.env` it has `stubEnv`.
       `jest.replaceProperty(process.env, $name, $value)` => `rs.stubEnv($name, $value)`,
@@ -274,4 +287,34 @@ const verifyRealTimers = () => {
         );
     }
 };
+```
+
+## Detect a test run by the runner's worker variable
+
+```javascript
+const workerId = process.env.JEST_WORKER_ID;
+```
+
+```javascript
+const workerId = process.env.RSTEST_WORKER_ID;
+```
+
+## Rename an inJest flag to inTest
+
+```javascript
+import {inJest} from "../../utils";
+
+export const inJest = typeof process !== "undefined" && !!process?.env?.JEST_WORKER_ID;
+if (!inJest) {
+    setup();
+}
+```
+
+```javascript
+import {inTest} from "../../utils";
+
+export const inTest = typeof process !== "undefined" && !!process?.env?.RSTEST_WORKER_ID;
+if (!inTest) {
+    setup();
+}
 ```

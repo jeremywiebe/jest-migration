@@ -44,6 +44,11 @@ imports) is left for the compatibility layer: a setup file that defines
   `describe()`, `it()` or `test()`) **and only inside arrow functions**, and a helper made
   `async` is awaited only one call deep, in the file that declares it. A
   `require()` in a `function`, or a caller of a caller, is left for a person.
+- **An `inJest` flag is renamed `inTest`** by name, wherever it's
+  declared, imported or used.
+- **`JEST_WORKER_ID` becomes `VITEST_WORKER_ID` everywhere**, in production code
+  too, so code that detects a test run keeps working under Vitest. It then
+  no longer detects a Jest run.
 - **`await import()` returns the module namespace.** For a CommonJS module
   that assigns `module.exports`, use its `default` export.
 - **A `verifyRealTimers()` function** (in a `wait()` test helper) is
@@ -69,6 +74,14 @@ pattern jest_mocks_to_vitest() {
     }
 }`
       },
+
+      // Code that detects a test run by Jest's worker variable checks
+      // Vitest's instead.
+      `JEST_WORKER_ID` => `VITEST_WORKER_ID`,
+
+      // An `inJest` flag that checks that variable no longer means
+      // Jest only.
+      `inJest` => `inTest`,
 
       // Vitest has no `replaceProperty`; for `process.env` it has `stubEnv`.
       `jest.replaceProperty(process.env, $name, $value)` => `vi.stubEnv($name, $value)`,
@@ -405,4 +418,34 @@ const packages = paths.map((path) => {
     const pkg = require(path);
     return pkg.name;
 });
+```
+
+## Detect a test run by the runner's worker variable
+
+```javascript
+const workerId = process.env.JEST_WORKER_ID;
+```
+
+```javascript
+const workerId = process.env.VITEST_WORKER_ID;
+```
+
+## Rename an inJest flag to inTest
+
+```javascript
+import {inJest} from "../../utils";
+
+export const inJest = typeof process !== "undefined" && !!process?.env?.JEST_WORKER_ID;
+if (!inJest) {
+    setup();
+}
+```
+
+```javascript
+import {inTest} from "../../utils";
+
+export const inTest = typeof process !== "undefined" && !!process?.env?.VITEST_WORKER_ID;
+if (!inTest) {
+    setup();
+}
 ```
