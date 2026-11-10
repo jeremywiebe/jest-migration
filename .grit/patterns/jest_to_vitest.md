@@ -3,13 +3,30 @@ title: Jest to Vitest
 tags: [migration, js]
 ---
 
-Convert Jest tests to Vitest
+Convert Jest tests to Vitest, with no compatibility layer: every Jest API
+is rewritten to Vitest's.
+
+The pattern runs in passes:
+
+1. A mock factory that returns a literal returns it as the module's
+   `default` export.
+2. The rules shared with the compatibility-layer pattern
+   (`jest_to_vitest_compat.md`): module mocks, `requireActual`, `require()`
+   in test files, `JEST_WORKER_ID`, `inJest` and
+   `verifyRealTimers()`, `replaceProperty` on `process.env` and
+   `test.failing()`. Their limitations, listed in that file, apply here too.
+3. A bare `.mockImplementation()` gets an empty implementation, as Jest's
+   means.
+4. Every other Jest API: types, `jest.*` calls, hooks, `done` callbacks and
+   custom matchers.
+5. Imports from `vitest` for the names the file uses.
 
 ## Known limitations — handle by hand after running
 
 - **Destructured type imports from `'@jest/globals'`** (e.g. `import { Mock, MockedFunction } from '@jest/globals'` used purely as types) are not preserved. The script deletes the whole `import ... from '@jest/globals'` line and the auto-import pass only re-adds named symbols that appear as **call expressions** (`describe(...)`, `expect(...)`, …). Bare type references like `let m: Mock = ...` will be orphaned. After running the codemod, `tsc` will surface these as "Cannot find name 'Mock'" — fix by adding `import { Mock } from 'vitest'` (the names map 1:1 except `SpyInstance → MockInstance`, which the script already rewrites). Namespaced usages like `jest.Mock` are fully handled.
 - **Multi-parameter `done` callbacks** (`(done, fail) => { ... }`) get wrapped as `new Promise((done, fail) => { ... })`, but only the first parameter is used by Vitest's Promise contract. Rare; flag if hit.
 - **`namespace jest { interface Expect { ... } }`** (asymmetric custom matchers) is not handled — only `interface Matchers<R>` is rewritten. Less common; hand-fix if encountered.
+- **`jest.replaceProperty()` on anything but `process.env`** becomes `vi.replaceProperty()`, which doesn't exist.
 
 ```grit
 engine marzano(0.1)
@@ -77,17 +94,11 @@ pattern adjust_imports_vitest() {
   }
 }
 
-pattern main_jest_to_vitest_migration() {
+// A mock factory that returns a literal returns it as the module's `default`
+// export. The shared rules then rewrite the `jest.mock()` call itself.
+pattern literal_mock_defaults() {
   file($body) where {
     $body <: contains bubble or {
-      `JEST_WORKER_ID` => `VITEST_POOL_ID`,
-
-      // Imports
-      `import $_ from 'jest'` => .,
-      `import $_ from '@jest/globals'` => .,
-
-      // MODULE MOCKS
-      // default literal mocking
       `jest.mock($module, $mockImplementation)` where {
         $mockImplementation <: or {
           arrow_function($body) where {
@@ -102,12 +113,31 @@ pattern main_jest_to_vitest_migration() {
             }
           }
         }
-        } => `vi.mock($module, $mockImplementation)`,
+      }
+    }
+  }
+}
 
-      `...jest.requireActual($module)` => `...(await vi.importActual($module))`,
-      `jest.requireActual($module)` => `await vi.importActual($module)`,
-      `...jest.requireMock($module)` => `...(await vi.importMock($module))`,
-      `jest.requireMock($module)` => `await vi.importMock($module)`,
+// A bare `.mockImplementation()` makes a Jest mock return `undefined`. Under
+// Vitest it keeps the current implementation, so a spy would still call the
+// original. Its own pass, so the call it's chained on is rewritten after.
+pattern bare_mock_implementations() {
+  file($body) where {
+    $body <: contains bubble {
+      `$expr.mockImplementation()` => `$expr.mockImplementation(() => {})`
+    }
+  }
+}
+
+// Every Jest API the shared rules leave, for a suite with no compatibility
+// layer.
+pattern jest_api_to_vitest() {
+  file($body) where {
+    $body <: contains bubble or {
+      // Imports
+      `import $_ from 'jest'` => .,
+      `import $_ from '@jest/globals'` => .,
+      `import $_ from "@jest/globals"` => .,
 
       // jest.{Mock,MockedFunction,Mocked,MockedClass,MockedObject} => bare name + vitest import
       `jest.$sym` where {
@@ -118,7 +148,7 @@ pattern main_jest_to_vitest_migration() {
           `MockedClass`,
           `MockedObject`
         },
-        $sym <: ensure_import_from(`"vitest"`)
+        $sym <: ensure_import_from(`'vitest'`)
       } => $sym,
 
       // jest.SpyInstance / jest.SpiedFunction => MockInstance + vitest import.
@@ -130,7 +160,7 @@ pattern main_jest_to_vitest_migration() {
         `jest.SpiedFunction`,
       } where {
         $sym = "MockInstance",
-        $sym <: ensure_import_from(`"vitest"`)
+        $sym <: ensure_import_from(`'vitest'`)
       } => `MockInstance`,
 
       // Catch-all: any other jest.$sym => vi.$sym
@@ -167,15 +197,6 @@ pattern main_jest_to_vitest_migration() {
         }
       },
 
-      // test.failing() => test.fails()
-      `$sym.failing($args)` => `$sym.fails($args)` where {
-        $sym <: or { `test`, `it` },
-      },
-
-      // .mockImplementation() with no args is valid in Jest (returns undefined)
-      // but Vitest's typings require an explicit implementation function.
-      `$expr.mockImplementation()` => `$expr.mockImplementation(() => {})`,
-
       // Custom matchers (extensions)
       // Delete the jest return type (Vitest can infer it)
       `$sym` => . where {
@@ -206,7 +227,13 @@ pattern main_jest_to_vitest_migration() {
 }
 
 sequential {
-  maybe main_jest_to_vitest_migration(),
+  maybe literal_mock_defaults(),
+  // Shared with jest_to_vitest_compat.md.
+  maybe jest_mocks_to_vitest(),
+  maybe and { test_file(), contains require_to_import() },
+  maybe and { test_file(), await_async_import_helpers() },
+  maybe bare_mock_implementations(),
+  maybe jest_api_to_vitest(),
   maybe contains adjust_imports_vitest(),
 }
 ```
@@ -317,7 +344,7 @@ const originalModule = {
   ...(await vi.importActual('../foo-bar-baz')),
   test: 1,
 };
-const currentWorkerId = VITEST_POOL_ID;
+const currentWorkerId = VITEST_WORKER_ID;
 
 test.skip('test.skip should be processed', () => {
   expect('value').toBe('value');
@@ -457,4 +484,70 @@ declare module "vitest" {
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- vitest custom matcher augmentation
     interface AsymmetricMatchersContaining extends CustomMatchers {}
 }
+```
+
+## Rewrite the rest of the Jest API
+
+```javascript
+import { describe, it, expect, jest } from "@jest/globals";
+
+jest.mock("./util", () => ({
+    ...jest.requireActual("./util"),
+    decode: jest.fn(),
+}));
+
+describe("thing", () => {
+    it("works", () => {
+        const spy = jest.spyOn(console, "warn").mockImplementation();
+        const mock: jest.Mock = jest.fn();
+        jest.useFakeTimers();
+        jest.advanceTimersByTime(10);
+        expect(mock).not.toHaveBeenCalled();
+        expect(spy).not.toHaveBeenCalled();
+    });
+});
+```
+
+```javascript
+import { Mock, vi, describe, it, expect } from 'vitest';
+
+vi.mock("./util", async () => ({
+    ...(await vi.importActual("./util")),
+    decode: vi.fn(),
+}));
+
+describe("thing", () => {
+    it("works", () => {
+        const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+        const mock: Mock = vi.fn();
+        vi.useFakeTimers();
+        vi.advanceTimersByTime(10);
+        expect(mock).not.toHaveBeenCalled();
+        expect(spy).not.toHaveBeenCalled();
+    });
+});
+```
+
+## Apply the shared rules
+
+```javascript
+describe("the env", () => {
+    it.failing("is production", () => {
+        jest.replaceProperty(process.env, "NODE_ENV", "production");
+        const value = require("./value").value;
+        expect(process.env.JEST_WORKER_ID).toBe(value);
+    });
+});
+```
+
+```javascript
+import { describe, it, vi, expect } from 'vitest';
+
+describe("the env", () => {
+    it.fails("is production", async () => {
+        vi.stubEnv("NODE_ENV", "production");
+        const value = (await import("./value")).value;
+        expect(process.env.VITEST_WORKER_ID).toBe(value);
+    });
+});
 ```
