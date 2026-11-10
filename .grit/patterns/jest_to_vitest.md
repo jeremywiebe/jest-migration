@@ -17,9 +17,12 @@ The pattern runs in passes:
    `test.failing()`. Their limitations, listed in that file, apply here too.
 3. A bare `.mockImplementation()` gets an empty implementation, as Jest's
    means.
-4. Every other Jest API: types, `jest.*` calls, hooks, `done` callbacks and
-   custom matchers.
-5. Imports from `vitest` for the names the file uses.
+4. The rewrites that don't depend on the runner: removing Jest's imports,
+   `done` callbacks, hook bodies and the custom matchers' result type.
+5. Every other Jest API: types, `jest.*` calls and custom matchers.
+6. Imports from `vitest` for the names the file uses.
+
+`jest_to_rstest.md` reuses passes 1, 3, 4 and 6.
 
 ## Known limitations — handle by hand after running
 
@@ -32,7 +35,10 @@ The pattern runs in passes:
 engine marzano(0.1)
 language js
 
-pattern adjust_imports_vitest() {
+// Import the test functions a file calls, and `$runner` in place of `jest`,
+// from `$source`. `$source_alt` is `$source` in the other quote style.
+// Shared with jest_to_rstest.md.
+pattern adjust_imports($runner, $source, $source_alt) {
   $body where {
     $body <: or {
       `$sym.$_($_)`,
@@ -53,7 +59,7 @@ pattern adjust_imports_vitest() {
         `beforeAll`,
         `afterAll`,
         `jest`,
-        `vi`
+        $runner
       } where {
         // Filter out methods which are imported from mocha.
         // `imported_from` compares the `from` clause syntactically (quote style
@@ -70,32 +76,31 @@ pattern adjust_imports_vitest() {
         // *.stories.tsx files alongside vitest in the same workspace.)
         $sym <: not imported_from(from = `'storybook/test'`),
         $sym <: not imported_from(from = `"storybook/test"`),
-        // Skip symbols already imported from vitest. `ensure_import_from` (the
+        // Skip symbols already imported from the runner. `ensure_import_from` (the
         // marzano stdlib helper used below) does not dedupe within an existing
         // named-import list, so without this guard a file like vite-test-setup.ts
         // (which pre-imports `vi`, `afterEach`) ends up with
         // `import {afterEach, vi, vi, afterEach} from "vitest";`. This guard
         // also makes the codemod idempotent on already-migrated files.
-        $sym <: not imported_from(from = `'vitest'`),
-        $sym <: not imported_from(from = `"vitest"`),
+        $sym <: not imported_from(from = $source),
+        $sym <: not imported_from(from = $source_alt),
         // Filter out methods which are imported as default from any module
         $statements <: not contains or {
           `import $sym from $_`,
         }
       },
-      $source = `'vitest'`,
-      $vi = `vi`,
       if ($sym <: not `jest`) {
         $sym <: ensure_import_from($source)
       } else {
-        $vi <: ensure_import_from($source)
+        $runner <: ensure_import_from($source)
       }
     }
   }
 }
 
 // A mock factory that returns a literal returns it as the module's `default`
-// export. The shared rules then rewrite the `jest.mock()` call itself.
+// export. The shared rules then rewrite the `jest.mock()` call itself. Shared
+// with jest_to_rstest.md.
 pattern literal_mock_defaults() {
   file($body) where {
     $body <: contains bubble or {
@@ -119,8 +124,9 @@ pattern literal_mock_defaults() {
 }
 
 // A bare `.mockImplementation()` makes a Jest mock return `undefined`. Under
-// Vitest it keeps the current implementation, so a spy would still call the
-// original. Its own pass, so the call it's chained on is rewritten after.
+// Vitest and Rstest it keeps the current implementation, so a spy would still
+// call the original. Its own pass, so the call it's chained on is rewritten
+// after. Shared with jest_to_rstest.md.
 pattern bare_mock_implementations() {
   file($body) where {
     $body <: contains bubble {
@@ -129,44 +135,16 @@ pattern bare_mock_implementations() {
   }
 }
 
-// Every Jest API the shared rules leave, for a suite with no compatibility
-// layer.
-pattern jest_api_to_vitest() {
+// Rewrites that don't depend on the target runner: Jest's imports, `done`
+// callbacks, hook bodies and the custom matchers' result type. Shared with
+// jest_to_rstest.md.
+pattern jest_runner_neutral() {
   file($body) where {
     $body <: contains bubble or {
       // Imports
       `import $_ from 'jest'` => .,
       `import $_ from '@jest/globals'` => .,
       `import $_ from "@jest/globals"` => .,
-
-      // jest.{Mock,MockedFunction,Mocked,MockedClass,MockedObject} => bare name + vitest import
-      `jest.$sym` where {
-        $sym <: or {
-          `Mock`,
-          `MockedFunction`,
-          `Mocked`,
-          `MockedClass`,
-          `MockedObject`
-        },
-        $sym <: ensure_import_from(`'vitest'`)
-      } => $sym,
-
-      // jest.SpyInstance / jest.SpiedFunction => MockInstance + vitest import.
-      // Both Jest type names map to vitest's MockInstance. Without this rule the
-      // catch-all below rewrites `jest.SpiedFunction` to `vi.SpiedFunction`, which
-      // is invalid since `vi` is imported as a value, not a namespace.
-      or {
-        `jest.SpyInstance`,
-        `jest.SpiedFunction`,
-      } where {
-        $sym = "MockInstance",
-        $sym <: ensure_import_from(`'vitest'`)
-      } => `MockInstance`,
-
-      // Catch-all: any other jest.$sym => vi.$sym
-      `jest.$sym` => `vi.$sym` where {
-        $sym <: not `CustomMatcherResult`
-      },
 
       // done callback
       or {
@@ -198,13 +176,51 @@ pattern jest_api_to_vitest() {
       },
 
       // Custom matchers (extensions)
-      // Delete the jest return type (Vitest can infer it)
+      // Delete the jest return type (the runner infers it)
       `$sym` => . where {
         $sym <: `:$ns.CustomMatcherResult` where {
-            $ns <: or { `vi`, `jest`}
+            $ns <: or { `vi`, `rs`, `jest` }
         }
+      }
+    }
+  }
+}
+
+// Every Jest API the shared rules leave, for a suite with no compatibility
+// layer.
+pattern jest_api_to_vitest() {
+  file($body) where {
+    $body <: contains bubble or {
+      // jest.{Mock,MockedFunction,Mocked,MockedClass,MockedObject} => bare name + vitest import
+      `jest.$sym` where {
+        $sym <: or {
+          `Mock`,
+          `MockedFunction`,
+          `Mocked`,
+          `MockedClass`,
+          `MockedObject`
+        },
+        $sym <: ensure_import_from(`'vitest'`)
+      } => $sym,
+
+      // jest.SpyInstance / jest.SpiedFunction => MockInstance + vitest import.
+      // Both Jest type names map to vitest's MockInstance. Without this rule the
+      // catch-all below rewrites `jest.SpiedFunction` to `vi.SpiedFunction`, which
+      // is invalid since `vi` is imported as a value, not a namespace.
+      or {
+        `jest.SpyInstance`,
+        `jest.SpiedFunction`,
+      } where {
+        $sym = "MockInstance",
+        $sym <: ensure_import_from(`'vitest'`)
+      } => `MockInstance`,
+
+      // Catch-all: any other jest.$sym => vi.$sym
+      `jest.$sym` => `vi.$sym` where {
+        $sym <: not `CustomMatcherResult`
       },
 
+      // Custom matchers (extensions)
       `$iface` where {
         $iface <: within internal_module(name="jest") as $mod,
         $mod <: within ambient_declaration() as $decl,
@@ -233,8 +249,9 @@ sequential {
   maybe and { test_file(), contains require_to_import() },
   maybe and { test_file(), await_async_import_helpers() },
   maybe bare_mock_implementations(),
+  maybe jest_runner_neutral(),
   maybe jest_api_to_vitest(),
-  maybe contains adjust_imports_vitest(),
+  maybe contains adjust_imports(runner = `vi`, source = `'vitest'`, source_alt = `"vitest"`),
 }
 ```
 

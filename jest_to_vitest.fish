@@ -1,7 +1,8 @@
 #!/usr/bin/env fish
 # Migrate a repo's Jest tests with one of this repo's GritQL patterns:
 #
-#   full           Rewrite Jest APIs to Vitest's (`jest_to_vitest`).
+#   vitest         Rewrite Jest APIs to Vitest's (`jest_to_vitest`).
+#   rstest         Rewrite Jest APIs to Rstest's (`jest_to_rstest`).
 #   vitest-compat  Rewrite only module mocks, for Vitest with a `jest`
 #                  compatibility layer (`jest_to_vitest_compat`).
 #   rstest-compat  Rewrite only module mocks, for Rstest with a `jest`
@@ -10,7 +11,7 @@
 # Then it formats and lint-fixes the files it changed, and deletes the repo's
 # snapshot files so the new test runner writes them afresh.
 
-set -l usage "Usage: "(status basename)" <full|vitest-compat|rstest-compat> [repo-dir]"
+set -l usage "Usage: "(status basename)" <vitest|rstest|vitest-compat|rstest-compat> [repo-dir]"
 set -l patterns (path resolve (status dirname))/.grit/patterns
 
 if test (count $argv) -lt 1; or test (count $argv) -gt 2
@@ -20,8 +21,10 @@ end
 
 set -l pattern
 switch $argv[1]
-    case full
+    case vitest
         set pattern jest_to_vitest
+    case rstest
+        set pattern jest_to_rstest
     case vitest-compat
         set pattern jest_to_vitest_compat
     case rstest-compat
