@@ -9,20 +9,20 @@ is rewritten to Rstest's.
 The pattern runs in passes, most of them shared with the other patterns:
 
 1. A mock factory that returns a literal returns it as the module's
-   `default` export (`jest_to_vitest.md`).
+   `default` export (`jest_to_vitest_full.md`).
 2. The rules shared with the compatibility-layer pattern
    (`jest_to_rstest_compat.md`): module mocks, `requireActual`,
    `resetModules`, `JEST_WORKER_ID`, `inJest` and
    `verifyRealTimers()`, `replaceProperty` on `process.env` and
    `test.failing()`. Their limitations, listed in that file, apply here too.
 3. A bare `.mockImplementation()` gets an empty implementation, as Jest's
-   means (`jest_to_vitest.md`).
+   means (`jest_to_vitest_full.md`).
 4. The rewrites that don't depend on the runner: removing Jest's imports,
    `done` callbacks, hook bodies and the custom matchers' result type
-   (`jest_to_vitest.md`).
+   (`jest_to_vitest_full.md`).
 5. Every other Jest API: types, `jest.*` calls and custom matchers.
 6. Imports from `@rstest/core` for the names the file uses
-   (`jest_to_vitest.md`).
+   (`jest_to_vitest_full.md`).
 
 Unlike Vitest's, Rstest's `requireActual` is synchronous, and Rstest runs
 `require()` in test files, so mock factories and `require()` calls stay as
@@ -109,11 +109,11 @@ pattern jest_api_to_rstest() {
 }
 
 sequential {
-  // Shared with jest_to_vitest.md.
+  // Shared with jest_to_vitest_full.md.
   maybe literal_mock_defaults(),
   // Shared with jest_to_rstest_compat.md.
   maybe jest_mocks_to_rstest(),
-  // Shared with jest_to_vitest.md.
+  // Shared with jest_to_vitest_full.md.
   maybe bare_mock_implementations(),
   maybe jest_runner_neutral(),
   maybe jest_api_to_rstest(),

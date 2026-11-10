@@ -1,7 +1,7 @@
 #!/usr/bin/env fish
 # Migrate a repo's Jest tests with one of this repo's GritQL patterns:
 #
-#   vitest         Rewrite Jest APIs to Vitest's (`jest_to_vitest`).
+#   vitest         Rewrite Jest APIs to Vitest's (`jest_to_vitest_full`).
 #   rstest         Rewrite Jest APIs to Rstest's (`jest_to_rstest`).
 #   vitest-compat  Rewrite only module mocks, for Vitest with a `jest`
 #                  compatibility layer (`jest_to_vitest_compat`).
@@ -22,7 +22,7 @@ end
 set -l pattern
 switch $argv[1]
     case vitest
-        set pattern jest_to_vitest
+        set pattern jest_to_vitest_full
     case rstest
         set pattern jest_to_rstest
     case vitest-compat
