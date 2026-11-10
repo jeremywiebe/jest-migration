@@ -17,16 +17,26 @@ The pattern runs in passes:
    `test.failing()`. Their limitations, listed in that file, apply here too.
 3. A bare `.mockImplementation()` gets an empty implementation, as Jest's
    means.
-4. The rewrites that don't depend on the runner: removing Jest's imports,
-   `done` callbacks, hook bodies and the custom matchers' result type.
-5. Every other Jest API: types, `jest.*` calls and custom matchers.
-6. Imports from `vitest` for the names the file uses.
+4. The rewrites that don't depend on the runner: removing imports from
+   `jest`, `done` callbacks, hook bodies and the custom matchers' result
+   type.
+5. Imports from `@jest/globals` come from `vitest` instead, with `jest`
+   renamed `vi`.
+6. Every other Jest API: types, `jest.*` calls and custom matchers.
 
-`jest_to_rstest_full.md` reuses passes 1, 3, 4 and 6.
+`jest_to_rstest_full.md` reuses passes 1, 3, 4 and 5.
+
+The test functions (`describe`, `it`, `expect`, the hooks) and `vi` stay
+globals, as they were under Jest: the config needs `globals: true`, and
+TypeScript needs `"types": ["vitest/globals"]` in place of `@types/jest`.
+Only the mock types (`Mock`, `MockInstance` and so on) are imported, since
+Vitest has no global types by those names.
 
 ## Known limitations — handle by hand after running
 
-- **Destructured type imports from `'@jest/globals'`** (e.g. `import { Mock, MockedFunction } from '@jest/globals'` used purely as types) are not preserved. The script deletes the whole `import ... from '@jest/globals'` line and the auto-import pass only re-adds named symbols that appear as **call expressions** (`describe(...)`, `expect(...)`, …). Bare type references like `let m: Mock = ...` will be orphaned. After running the codemod, `tsc` will surface these as "Cannot find name 'Mock'" — fix by adding `import { Mock } from 'vitest'` (the names map 1:1 except `SpyInstance → MockInstance`, which the script already rewrites). Namespaced usages like `jest.Mock` are fully handled.
+- **Names imported from `'@jest/globals'` keep their names**, apart from
+  `jest`. One that `vitest` doesn't export under the same name (such as
+  `SpyInstance`) has to be renamed by hand; `tsc` reports it.
 - **Multi-parameter `done` callbacks** (`(done, fail) => { ... }`) get wrapped as `new Promise((done, fail) => { ... })`, but only the first parameter is used by Vitest's Promise contract. Rare; flag if hit.
 - **`namespace jest { interface Expect { ... } }`** (asymmetric custom matchers) is not handled — only `interface Matchers<R>` is rewritten. Less common; hand-fix if encountered.
 - **`jest.replaceProperty()` on anything but `process.env`** becomes `vi.replaceProperty()`, which doesn't exist.
@@ -35,68 +45,55 @@ The pattern runs in passes:
 engine marzano(0.1)
 language js
 
-// Import the test functions a file calls, and `$runner` in place of `jest`,
-// from `$source`. `$source_alt` is `$source` in the other quote style.
-// Shared with jest_to_rstest_full.md.
-pattern adjust_imports($runner, $source, $source_alt) {
-  $body where {
-    $body <: or {
-      `$sym.$_($_)`,
-      `$sym($_)`,
-      // Also match bare property accesses like `vi.advanceTimersByTime`
-      // (used as a value, not invoked). Without this, `vi` is not
-      // auto-imported when only referenced via property access.
-      `$sym.$_`,
-    } where {
-      $program <: program($statements),
-      $sym <: or {
-        `test`,
-        `expect`,
-        `describe`,
-        `it`,
-        `beforeEach`,
-        `afterEach`,
-        `beforeAll`,
-        `afterAll`,
-        `jest`,
-        $runner
-      } where {
-        // Filter out methods which are imported from mocha.
-        // `imported_from` compares the `from` clause syntactically (quote style
-        // included), so we check both single- and double-quoted forms.
-        $sym <: not imported_from(from = `'mocha'`),
-        $sym <: not imported_from(from = `"mocha"`),
-        // Filter out methods which are imported from tstyche (TypeScript type-testing library
-        // whose API overlaps with Jest/Vitest — describe/it/expect — but operates at the type
-        // level, not runtime. Type-tests should keep their tstyche imports intact.)
-        $sym <: not imported_from(from = `'tstyche'`),
-        $sym <: not imported_from(from = `"tstyche"`),
-        // Filter out methods imported from storybook/test (Storybook's test utility
-        // package re-exports describe/it/expect/within and is used in regression
-        // *.stories.tsx files alongside vitest in the same workspace.)
-        $sym <: not imported_from(from = `'storybook/test'`),
-        $sym <: not imported_from(from = `"storybook/test"`),
-        // Skip symbols already imported from the runner. `ensure_import_from` (the
-        // marzano stdlib helper used below) does not dedupe within an existing
-        // named-import list, so without this guard a file like vite-test-setup.ts
-        // (which pre-imports `vi`, `afterEach`) ends up with
-        // `import {afterEach, vi, vi, afterEach} from "vitest";`. This guard
-        // also makes the codemod idempotent on already-migrated files.
-        $sym <: not imported_from(from = $source),
-        $sym <: not imported_from(from = $source_alt),
-        // Filter out methods which are imported as default from any module
-        $statements <: not contains or {
-          `import $sym from $_`,
-        }
-      },
-      if ($sym <: not `jest`) {
-        $sym <: ensure_import_from($source)
-      } else {
-        $runner <: ensure_import_from($source)
-      }
-    }
-  }
-}
+// Off: the full patterns leave the test functions, `vi` and `rs` as
+// globals (`globals: true` in the runner's config). To import them instead,
+// uncomment these and the `adjust_imports` step in each full pattern's
+// `sequential`.
+// // Import `$name` from `$source` if the file uses it and doesn't already
+// // import it. Only the name's first use is checked: checking every call and
+// // member access in a file took close to a minute on a 4,000-line test.
+// pattern import_runner_name($name, $source, $source_alt) {
+//   file($body) where {
+//     $program <: program($statements),
+//     $body <: contains or { `$sym($_)`, `$sym.$_` } where {
+//       $sym <: $name,
+//       // `imported_from` compares the `from` clause syntactically (quote style
+//       // included), so check both single- and double-quoted forms.
+//       $sym <: not imported_from(from = `'mocha'`),
+//       $sym <: not imported_from(from = `"mocha"`),
+//       // tstyche's describe/it/expect test types, not runtime code.
+//       $sym <: not imported_from(from = `'tstyche'`),
+//       $sym <: not imported_from(from = `"tstyche"`),
+//       // storybook/test re-exports describe/it/expect for stories.
+//       $sym <: not imported_from(from = `'storybook/test'`),
+//       $sym <: not imported_from(from = `"storybook/test"`),
+//       // `ensure_import_from` doesn't dedupe within an existing named import,
+//       // and this keeps the codemod idempotent.
+//       $sym <: not imported_from(from = $source),
+//       $sym <: not imported_from(from = $source_alt),
+//       // A default import of the same name, e.g. `import expect from 'expect'`.
+//       $statements <: not contains `import $sym from $_`,
+//       $sym <: ensure_import_from($source)
+//     }
+//   }
+// }
+//
+// // Import the test functions a file uses, and `$runner`, from `$source`.
+// // `$source_alt` is `$source` in the other quote style. Shared with
+// // jest_to_rstest_full.md.
+// pattern adjust_imports($runner, $source, $source_alt) {
+//   and {
+//     maybe import_runner_name(name = `describe`, source = $source, source_alt = $source_alt),
+//     maybe import_runner_name(name = `test`, source = $source, source_alt = $source_alt),
+//     maybe import_runner_name(name = `it`, source = $source, source_alt = $source_alt),
+//     maybe import_runner_name(name = `expect`, source = $source, source_alt = $source_alt),
+//     maybe import_runner_name(name = `beforeAll`, source = $source, source_alt = $source_alt),
+//     maybe import_runner_name(name = `beforeEach`, source = $source, source_alt = $source_alt),
+//     maybe import_runner_name(name = `afterAll`, source = $source, source_alt = $source_alt),
+//     maybe import_runner_name(name = `afterEach`, source = $source, source_alt = $source_alt),
+//     maybe import_runner_name(name = $runner, source = $source, source_alt = $source_alt),
+//   }
+// }
 
 // A mock factory that returns a literal returns it as the module's `default`
 // export. The shared rules then rewrite the `jest.mock()` call itself. Shared
@@ -135,7 +132,7 @@ pattern bare_mock_implementations() {
   }
 }
 
-// Rewrites that don't depend on the target runner: Jest's imports, `done`
+// Rewrites that don't depend on the target runner: imports from `jest`, `done`
 // callbacks, hook bodies and the custom matchers' result type. Shared with
 // jest_to_rstest_full.md.
 pattern jest_runner_neutral() {
@@ -143,8 +140,6 @@ pattern jest_runner_neutral() {
     $body <: contains bubble or {
       // Imports
       `import $_ from 'jest'` => .,
-      `import $_ from '@jest/globals'` => .,
-      `import $_ from "@jest/globals"` => .,
 
       // done callback
       or {
@@ -177,11 +172,22 @@ pattern jest_runner_neutral() {
 
       // Custom matchers (extensions)
       // Delete the jest return type (the runner infers it)
-      `$sym` => . where {
-        $sym <: `:$ns.CustomMatcherResult` where {
-            $ns <: or { `vi`, `rs`, `jest` }
-        }
+      `:$ns.CustomMatcherResult` => . where {
+        $ns <: or { `vi`, `rs`, `jest` }
       }
+    }
+  }
+}
+
+// Point imports from `@jest/globals` at `$source`, with `jest` renamed
+// `$runner`: names a file imported under Jest stay imported. Shared with
+// jest_to_rstest_full.md.
+pattern jest_globals_imports($runner, $source) {
+  file($body) where {
+    $body <: contains bubble($runner, $source) `import $clause from $src` where {
+      $src <: or { `'@jest/globals'`, `"@jest/globals"` },
+      $src => $source,
+      $clause <: maybe contains `jest` => $runner
     }
   }
 }
@@ -221,7 +227,8 @@ pattern jest_api_to_vitest() {
       },
 
       // Custom matchers (extensions)
-      `$iface` where {
+      // Match the interface first: checking `within` on every node is slow.
+      interface_declaration(name="Matchers") as $iface where {
         $iface <: within internal_module(name="jest") as $mod,
         $mod <: within ambient_declaration() as $decl,
         $iface <: interface_declaration(name="Matchers", $body) => `interface CustomMatchers<R = unknown> $body`,
@@ -250,8 +257,10 @@ sequential {
   maybe and { test_file(), await_async_import_helpers() },
   maybe bare_mock_implementations(),
   maybe jest_runner_neutral(),
+  maybe jest_globals_imports(runner = `vi`, source = `'vitest'`),
   maybe jest_api_to_vitest(),
-  maybe contains adjust_imports(runner = `vi`, source = `'vitest'`, source_alt = `"vitest"`),
+  // Off: test functions and `vi` stay globals. See `adjust_imports`.
+  // maybe adjust_imports(runner = `vi`, source = `'vitest'`, source_alt = `"vitest"`),
 }
 ```
 
@@ -336,8 +345,6 @@ afterEach(function () {
 ```
 
 ```javascript
-import { vi, test, expect, it, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
-
 vi.mock('./some-path', () => ({
   default: 'hello',
 }));
@@ -429,19 +436,17 @@ afterEach(function () {
 });
 ```
 
-## Import vi even with just vi.mock
+## Leave vi a global
 
 ```javascript
 jest.mock('./some-path', () => ({ default: 'value' }));
 ```
 
 ```javascript
-import { vi } from 'vitest';
-
 vi.mock('./some-path', () => ({ default: 'value' }));
 ```
 
-## Do not import methods which are imported from mocha/expect
+## Leave a file with mocha and expect imports alone
 
 ```javascript
 import expect from 'expect';
@@ -457,8 +462,6 @@ describe('Repository component', () => {
 
 ```javascript
 import expect from 'expect';
-import { it } from 'vitest';
-
 import { describe, test, before, beforeEach, after } from 'mocha';
 
 describe('Repository component', () => {
@@ -526,7 +529,7 @@ describe("thing", () => {
 ```
 
 ```javascript
-import { Mock, vi, describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, Mock } from 'vitest';
 
 vi.mock("./util", async () => ({
     ...(await vi.importActual("./util")),
@@ -558,8 +561,6 @@ describe("the env", () => {
 ```
 
 ```javascript
-import { describe, it, vi, expect } from 'vitest';
-
 describe("the env", () => {
     it.fails("is production", async () => {
         vi.stubEnv("NODE_ENV", "production");

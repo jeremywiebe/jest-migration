@@ -17,12 +17,17 @@ The pattern runs in passes, most of them shared with the other patterns:
    `test.failing()`. Their limitations, listed in that file, apply here too.
 3. A bare `.mockImplementation()` gets an empty implementation, as Jest's
    means (`jest_to_vitest_full.md`).
-4. The rewrites that don't depend on the runner: removing Jest's imports,
-   `done` callbacks, hook bodies and the custom matchers' result type
-   (`jest_to_vitest_full.md`).
-5. Every other Jest API: types, `jest.*` calls and custom matchers.
-6. Imports from `@rstest/core` for the names the file uses
-   (`jest_to_vitest_full.md`).
+4. The rewrites that don't depend on the runner: removing imports from
+   `jest`, `done` callbacks, hook bodies and the custom matchers' result
+   type (`jest_to_vitest_full.md`).
+5. Imports from `@jest/globals` come from `@rstest/core` instead, with
+   `jest` renamed `rs` (`jest_to_vitest_full.md`).
+6. Every other Jest API: types, `jest.*` calls and custom matchers.
+
+The test functions (`describe`, `it`, `expect`, the hooks) and `rs` stay
+globals, as they were under Jest: the config needs `globals: true`, and
+TypeScript needs Rstest's global types in place of `@types/jest`. Only the
+mock types (`Mock`, `MockInstance`, `Mocked`) are imported.
 
 Unlike Vitest's, Rstest's `requireActual` is synchronous, and Rstest runs
 `require()` in test files, so mock factories and `require()` calls stay as
@@ -30,11 +35,9 @@ they are.
 
 ## Known limitations — handle by hand after running
 
-- **Destructured type imports from `'@jest/globals'`** (e.g.
-  `import { Mock } from '@jest/globals'` used only as a type) are removed
-  with the rest of the import, and nothing re-adds them. `tsc` reports the
-  orphaned names; import them from `@rstest/core`. Namespaced uses like
-  `jest.Mock` are handled.
+- **Names imported from `'@jest/globals'` keep their names**, apart from
+  `jest`. One that `@rstest/core` doesn't export under the same name has to
+  be renamed by hand; `tsc` reports it.
 - **`jest.MockedFunction`, `jest.MockedClass` and `jest.MockedObject`** all
   become `Mocked`, Rstest's one type for a mocked value.
 - **`jest.createMockFromModule()`, `jest.isolateModules()`, `jest.setMock()`
@@ -88,7 +91,8 @@ pattern jest_api_to_rstest() {
       },
 
       // Custom matchers (extensions)
-      `$iface` where {
+      // Match the interface first: checking `within` on every node is slow.
+      interface_declaration(name="Matchers") as $iface where {
         $iface <: within internal_module(name="jest") as $mod,
         $mod <: within ambient_declaration() as $decl,
         $iface <: interface_declaration(name="Matchers", $body) => `interface CustomMatchers<R = unknown> $body`,
@@ -116,8 +120,11 @@ sequential {
   // Shared with jest_to_vitest_full.md.
   maybe bare_mock_implementations(),
   maybe jest_runner_neutral(),
+  maybe jest_globals_imports(runner = `rs`, source = `"@rstest/core"`),
   maybe jest_api_to_rstest(),
-  maybe contains adjust_imports(runner = `rs`, source = `"@rstest/core"`, source_alt = `'@rstest/core'`),
+  // Off: test functions and `rs` stay globals. See `adjust_imports` in
+  // jest_to_vitest_full.md.
+  // maybe adjust_imports(runner = `rs`, source = `"@rstest/core"`, source_alt = `'@rstest/core'`),
 }
 ```
 
@@ -144,7 +151,7 @@ describe("thing", () => {
 ```
 
 ```javascript
-import { Mock, rs, describe, it, expect } from "@rstest/core";
+import { describe, it, expect, rs, Mock } from "@rstest/core";
 
 rs.mock("./util", () => ({
     ...rs.requireActual("./util"),
@@ -171,7 +178,7 @@ const spy: jest.SpyInstance = jest.spyOn(console, "log");
 ```
 
 ```javascript
-import { Mocked, MockInstance, rs } from "@rstest/core";
+import { Mocked, MockInstance } from "@rstest/core";
 
 const fn: Mocked<typeof f> = rs.fn();
 const spy: MockInstance = rs.spyOn(console, "log");
@@ -189,8 +196,6 @@ describe("the env", () => {
 ```
 
 ```javascript
-import { describe, it, rs, expect } from "@rstest/core";
-
 describe("the env", () => {
     it.fails("is production", () => {
         rs.stubEnv("NODE_ENV", "production");
@@ -209,8 +214,6 @@ it("finishes", (done) => {
 ```
 
 ```javascript
-import { beforeEach, rs, it } from "@rstest/core";
-
 beforeEach(() => {
     rs.useFakeTimers();
 });
