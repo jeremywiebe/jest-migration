@@ -53,10 +53,10 @@ end
 # runs in. So run it from this repo, and point it at the target repo.
 # `--force` skips grit's check for uncommitted changes, which looks at this
 # repo, not the target; the target was checked above.
-# Pass only the files git tracks: grit run from outside the target doesn't
-# read the target's .gitignore, and would walk node_modules too.
+# Pass grit the tracked TypeScript files: grit run from outside the target
+# doesn't read the target's .gitignore, and would walk node_modules too.
 set -l target (pwd)
-set -l files (git ls-files -- '*.js' '*.jsx' '*.mjs' '*.cjs' '*.ts' '*.tsx' '*.mts' '*.cts')
+set -l files (git ls-files -- '*.ts' '*.tsx' '*.mts' '*.cts')
 pushd $codemod; or exit 1
 grit apply --force $pattern $target/$files
 set -l applied $status
