@@ -22,7 +22,7 @@ The pattern runs in passes:
 5. Every other Jest API: types, `jest.*` calls and custom matchers.
 6. Imports from `vitest` for the names the file uses.
 
-`jest_to_rstest.md` reuses passes 1, 3, 4 and 6.
+`jest_to_rstest_full.md` reuses passes 1, 3, 4 and 6.
 
 ## Known limitations — handle by hand after running
 
@@ -37,7 +37,7 @@ language js
 
 // Import the test functions a file calls, and `$runner` in place of `jest`,
 // from `$source`. `$source_alt` is `$source` in the other quote style.
-// Shared with jest_to_rstest.md.
+// Shared with jest_to_rstest_full.md.
 pattern adjust_imports($runner, $source, $source_alt) {
   $body where {
     $body <: or {
@@ -100,7 +100,7 @@ pattern adjust_imports($runner, $source, $source_alt) {
 
 // A mock factory that returns a literal returns it as the module's `default`
 // export. The shared rules then rewrite the `jest.mock()` call itself. Shared
-// with jest_to_rstest.md.
+// with jest_to_rstest_full.md.
 pattern literal_mock_defaults() {
   file($body) where {
     $body <: contains bubble or {
@@ -126,7 +126,7 @@ pattern literal_mock_defaults() {
 // A bare `.mockImplementation()` makes a Jest mock return `undefined`. Under
 // Vitest and Rstest it keeps the current implementation, so a spy would still
 // call the original. Its own pass, so the call it's chained on is rewritten
-// after. Shared with jest_to_rstest.md.
+// after. Shared with jest_to_rstest_full.md.
 pattern bare_mock_implementations() {
   file($body) where {
     $body <: contains bubble {
@@ -137,7 +137,7 @@ pattern bare_mock_implementations() {
 
 // Rewrites that don't depend on the target runner: Jest's imports, `done`
 // callbacks, hook bodies and the custom matchers' result type. Shared with
-// jest_to_rstest.md.
+// jest_to_rstest_full.md.
 pattern jest_runner_neutral() {
   file($body) where {
     $body <: contains bubble or {
