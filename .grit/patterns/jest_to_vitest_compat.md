@@ -61,6 +61,13 @@ language js
 
 pattern jest_mocks_to_vitest() {
   file($body) where {
+    // A substring check skips the syntax walk in files that can't match.
+    or {
+      $body <: includes "jest.",
+      $body <: includes "JEST_WORKER_ID",
+      $body <: includes "inJest",
+      $body <: includes ".failing",
+    },
     $body <: contains bubble or {
       // A `wait()` helper may detect fake timers by calling
       // `jest.getTimerCount()` with real timers in place. Replace that check
@@ -171,6 +178,12 @@ pattern import_vi_from_vitest() {
   }
 }
 
+// Whether the file's text contains `$text`: a string search, much cheaper
+// than a syntax walk, so passes check it first.
+pattern file_includes($text) {
+  file($body) where { $body <: includes $text }
+}
+
 // Only test files: a script's `require()` calls are left alone, since making
 // its callbacks async would change what it does.
 pattern test_file() {
@@ -181,9 +194,10 @@ pattern test_file() {
 
 sequential {
   maybe jest_mocks_to_vitest(),
-  maybe and { test_file(), contains require_to_import() },
-  maybe and { test_file(), await_async_import_helpers() },
-  maybe contains import_vi_from_vitest(),
+  // Substring checks first: they skip the syntax walk in most files.
+  maybe and { file_includes(text = "require("), test_file(), contains require_to_import() },
+  maybe and { file_includes(text = "await import("), test_file(), await_async_import_helpers() },
+  maybe and { file_includes(text = "vi."), contains import_vi_from_vitest() },
 }
 ```
 

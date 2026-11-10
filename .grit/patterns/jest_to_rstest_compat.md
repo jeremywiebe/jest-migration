@@ -50,6 +50,13 @@ language js
 
 pattern jest_mocks_to_rstest() {
   file($body) where {
+    // A substring check skips the syntax walk in files that can't match.
+    or {
+      $body <: includes "jest.",
+      $body <: includes "JEST_WORKER_ID",
+      $body <: includes "inJest",
+      $body <: includes ".failing",
+    },
     $body <: contains bubble or {
       // A `wait()` helper may detect fake timers by calling
       // `jest.getTimerCount()` with real timers in place. Replace that check
@@ -110,7 +117,7 @@ pattern import_rs_from_rstest() {
 
 sequential {
   maybe jest_mocks_to_rstest(),
-  maybe contains import_rs_from_rstest(),
+  maybe and { file_includes(text = "rs."), contains import_rs_from_rstest() },
 }
 ```
 

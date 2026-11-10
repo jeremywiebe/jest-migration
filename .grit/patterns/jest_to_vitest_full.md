@@ -100,6 +100,7 @@ language js
 // with jest_to_rstest_full.md.
 pattern literal_mock_defaults() {
   file($body) where {
+    $body <: includes "jest.mock",
     $body <: contains bubble or {
       `jest.mock($module, $mockImplementation)` where {
         $mockImplementation <: or {
@@ -126,6 +127,7 @@ pattern literal_mock_defaults() {
 // after. Shared with jest_to_rstest_full.md.
 pattern bare_mock_implementations() {
   file($body) where {
+    $body <: includes "mockImplementation()",
     $body <: contains bubble {
       `$expr.mockImplementation()` => `$expr.mockImplementation(() => {})`
     }
@@ -184,6 +186,7 @@ pattern jest_runner_neutral() {
 // jest_to_rstest_full.md.
 pattern jest_globals_imports($runner, $source) {
   file($body) where {
+    $body <: includes "@jest/globals",
     $body <: contains bubble($runner, $source) `import $clause from $src` where {
       $src <: or { `'@jest/globals'`, `"@jest/globals"` },
       $src => $source,
@@ -196,6 +199,8 @@ pattern jest_globals_imports($runner, $source) {
 // layer.
 pattern jest_api_to_vitest() {
   file($body) where {
+    // Every rule here matches `jest.` or `namespace jest`.
+    $body <: includes "jest",
     $body <: contains bubble or {
       // jest.{Mock,MockedFunction,Mocked,MockedClass,MockedObject} => bare name + vitest import
       `jest.$sym` where {
@@ -253,8 +258,8 @@ sequential {
   maybe literal_mock_defaults(),
   // Shared with jest_to_vitest_compat.md.
   maybe jest_mocks_to_vitest(),
-  maybe and { test_file(), contains require_to_import() },
-  maybe and { test_file(), await_async_import_helpers() },
+  maybe and { file_includes(text = "require("), test_file(), contains require_to_import() },
+  maybe and { file_includes(text = "await import("), test_file(), await_async_import_helpers() },
   maybe bare_mock_implementations(),
   maybe jest_runner_neutral(),
   maybe jest_globals_imports(runner = `vi`, source = `'vitest'`),

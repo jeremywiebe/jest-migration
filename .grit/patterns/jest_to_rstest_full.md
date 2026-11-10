@@ -57,6 +57,8 @@ language js
 // layer.
 pattern jest_api_to_rstest() {
   file($body) where {
+    // Every rule here matches `jest.` or `namespace jest`.
+    $body <: includes "jest",
     $body <: contains bubble or {
       // Rstest's mock types have the same names as Jest's, imported from
       // `@rstest/core`, except that one `Mocked` type covers functions,
