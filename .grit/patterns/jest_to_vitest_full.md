@@ -22,9 +22,12 @@ The pattern runs in passes:
    type.
 5. Imports from `@jest/globals` come from `vitest` instead, with `jest`
    renamed `vi`.
-6. Every other Jest API: types, `jest.*` calls and custom matchers.
+6. Imports of `@testing-library/jest-dom` are removed: that entry point
+   extends Jest's types. The setup file imports
+   `@testing-library/jest-dom/vitest` instead.
+7. Every other Jest API: types, `jest.*` calls and custom matchers.
 
-`jest_to_rstest_full.md` reuses passes 1, 3, 4 and 5.
+`jest_to_rstest_full.md` reuses passes 1, 3, 4, 5 and 6.
 
 The test functions (`describe`, `it`, `expect`, the hooks) and `vi` stay
 globals, as they were under Jest: the config needs `globals: true`, and
@@ -195,6 +198,24 @@ pattern jest_globals_imports($runner, $source) {
   }
 }
 
+// Remove `import "@testing-library/jest-dom"`: that entry point adds its
+// matchers to Jest's types, and loads `@types/jest` with them. The runner's
+// setup file registers the matchers instead. Shared with
+// jest_to_rstest_full.md.
+pattern jest_dom_imports() {
+  file($body) where {
+    $body <: includes "@testing-library/jest-dom",
+    $body <: contains bubble `import $src` where {
+      $src <: or {
+        `'@testing-library/jest-dom'`,
+        `"@testing-library/jest-dom"`,
+        `'@testing-library/jest-dom/extend-expect'`,
+        `"@testing-library/jest-dom/extend-expect"`
+      }
+    } => .
+  }
+}
+
 // Every Jest API the shared rules leave, for a suite with no compatibility
 // layer.
 pattern jest_api_to_vitest() {
@@ -263,6 +284,7 @@ sequential {
   maybe bare_mock_implementations(),
   maybe jest_runner_neutral(),
   maybe jest_globals_imports(runner = `vi`, source = `'vitest'`),
+  maybe jest_dom_imports(),
   maybe jest_api_to_vitest(),
   // Off: test functions and `vi` stay globals. See `adjust_imports`.
   // maybe adjust_imports(runner = `vi`, source = `'vitest'`, source_alt = `"vitest"`),
@@ -449,6 +471,25 @@ jest.mock('./some-path', () => ({ default: 'value' }));
 
 ```javascript
 vi.mock('./some-path', () => ({ default: 'value' }));
+```
+
+## Remove jest-dom imports
+
+```javascript
+import "@testing-library/jest-dom";
+import { render } from "@testing-library/react";
+
+it('renders', () => {
+  render(null);
+});
+```
+
+```javascript
+import { render } from "@testing-library/react";
+
+it('renders', () => {
+  render(null);
+});
 ```
 
 ## Leave a file with mocha and expect imports alone

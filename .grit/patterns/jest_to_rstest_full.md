@@ -22,7 +22,10 @@ The pattern runs in passes, most of them shared with the other patterns:
    type (`jest_to_vitest_full.md`).
 5. Imports from `@jest/globals` come from `@rstest/core` instead, with
    `jest` renamed `rs` (`jest_to_vitest_full.md`).
-6. Every other Jest API: types, `jest.*` calls and custom matchers.
+6. Imports of `@testing-library/jest-dom` are removed: that entry point
+   extends Jest's types. The setup file registers the matchers from
+   `@testing-library/jest-dom/matchers` instead (`jest_to_vitest_full.md`).
+7. Every other Jest API: types, `jest.*` calls and custom matchers.
 
 The test functions (`describe`, `it`, `expect`, the hooks) and `rs` stay
 globals, as they were under Jest: the config needs `globals: true`, and
@@ -123,6 +126,7 @@ sequential {
   maybe bare_mock_implementations(),
   maybe jest_runner_neutral(),
   maybe jest_globals_imports(runner = `rs`, source = `"@rstest/core"`),
+  maybe jest_dom_imports(),
   maybe jest_api_to_rstest(),
   // Off: test functions and `rs` stay globals. See `adjust_imports` in
   // jest_to_vitest_full.md.
@@ -169,6 +173,25 @@ describe("thing", () => {
         expect(mock).not.toHaveBeenCalled();
         expect(spy).not.toHaveBeenCalled();
     });
+});
+```
+
+## Remove jest-dom imports
+
+```javascript
+import "@testing-library/jest-dom";
+import { render } from "@testing-library/react";
+
+it('renders', () => {
+  render(null);
+});
+```
+
+```javascript
+import { render } from "@testing-library/react";
+
+it('renders', () => {
+  render(null);
 });
 ```
 
