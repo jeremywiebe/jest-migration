@@ -43,6 +43,9 @@ Vitest has no global types by those names.
 - **Multi-parameter `done` callbacks** (`(done, fail) => { ... }`) get wrapped as `new Promise((done, fail) => { ... })`, but only the first parameter is used by Vitest's Promise contract. Rare; flag if hit.
 - **`namespace jest { interface Expect { ... } }`** (asymmetric custom matchers) is not handled — only `interface Matchers<R>` is rewritten. Less common; hand-fix if encountered.
 - **`jest.replaceProperty()` on anything but `process.env`** becomes `vi.replaceProperty()`, which doesn't exist.
+- **A comment after a removed jest-dom import stays**: `import
+  "@testing-library/jest-dom"; // matchers` leaves `// matchers` on its own
+  line. Delete it by hand.
 
 ```grit
 engine marzano(0.1)

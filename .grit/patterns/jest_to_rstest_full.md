@@ -46,6 +46,9 @@ they are.
 - **`jest.createMockFromModule()`, `jest.isolateModules()`, `jest.setMock()`
   and `jest.replaceProperty()` on anything but `process.env`** become `rs.*`
   calls that Rstest doesn't have.
+- **A comment after a removed jest-dom import stays**: `import
+  "@testing-library/jest-dom"; // matchers` leaves `// matchers` on its own
+  line. Delete it by hand.
 - **Multi-parameter `done` callbacks** (`(done, fail) => { ... }`) get
   wrapped as `new Promise((done, fail) => { ... })`, which makes `fail` the
   promise's `reject`.
