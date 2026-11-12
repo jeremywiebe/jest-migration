@@ -27,8 +27,8 @@ The pattern runs in passes, most of them shared with the other patterns:
    `@testing-library/jest-dom/matchers` instead (`jest_to_vitest_full.md`).
 7. Every other Jest API: types, `jest.*` calls and custom matchers.
 8. Tables written as tagged templates (``it.each`...` ``) get `any` rows
-   (``it.each<any>`...` ``). Rstest types their fields `unknown`, where
-   Jest's types made them `any`.
+   (``it.each<any>`...` ``). That's how Jest's types already typed them,
+   implicitly; Rstest types their fields `unknown` instead.
 
 The test functions (`describe`, `it`, `expect`, the hooks) and `rs` stay
 globals, as they were under Jest: the config needs `globals: true`, and
@@ -67,8 +67,10 @@ language js
 // Every Jest API the shared rules leave, for a suite with no compatibility
 // layer.
 // Give tagged-template tables (`it.each\`...\``, `describe.each\`...\``)
-// `any` rows, as Jest's types did: Rstest types each row as
-// `Record<string, unknown>`, so every use of a field fails to type-check.
+// `any` rows. Jest's types already typed them that way, implicitly; `<any>`
+// only makes it explicit. Rstest types each row as
+// `Record<string, unknown>`, so without it every use of a field fails to
+// type-check.
 pattern each_tables_any() {
   file($body) where {
     $body <: includes ".each`",
