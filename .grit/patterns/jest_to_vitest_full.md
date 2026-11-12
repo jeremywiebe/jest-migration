@@ -262,16 +262,18 @@ pattern jest_api_to_vitest() {
         $mod <: within ambient_declaration() as $decl,
         $iface <: interface_declaration(name="Matchers", $body) => `interface CustomMatchers<R = unknown> $body`,
         $decl => $iface,
-        // The two `interface ... extends X {}` lines below are the vitest-
-        // documented form for custom-matcher module augmentation. Empty
-        // single-extends interfaces violate @typescript-eslint/no-empty-object-type
-        // by default, so we emit eslint-disable-next-line comments to suppress
-        // the warning at the source rather than relaxing the rule project-wide.
+        // Vitest 5 declares `Matchers<R, T>`, which both `Assertion` and
+        // `AsymmetricMatchersContaining` extend. An augmentation has to repeat
+        // its type parameters exactly, so `T` stays though it's unused. The
+        // disable comments keep @typescript-eslint/no-empty-object-type and
+        // no-unused-vars from flagging that at the source.
         $decl += `;\n\ndeclare module 'vitest' {
             // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- vitest custom matcher augmentation
-            interface Assertion<T = any> extends CustomMatchers<T> {}
-            // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- vitest custom matcher augmentation
-            interface AsymmetricMatchersContaining extends CustomMatchers {}
+            interface Matchers<
+                R extends void | Promise<void> = void | Promise<void>,
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars -- must match vitest's declaration
+                T = unknown,
+            > extends CustomMatchers<R> {}
         }`
       }
     },
@@ -549,9 +551,11 @@ interface CustomMatchers<R = unknown> {
 
 declare module "vitest" {
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- vitest custom matcher augmentation
-    interface Assertion<T = any> extends CustomMatchers<T> {}
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- vitest custom matcher augmentation
-    interface AsymmetricMatchersContaining extends CustomMatchers {}
+    interface Matchers<
+        R extends void | Promise<void> = void | Promise<void>,
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars -- must match vitest's declaration
+        T = unknown,
+    > extends CustomMatchers<R> {}
 }
 ```
 
