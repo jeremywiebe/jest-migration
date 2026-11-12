@@ -9,7 +9,7 @@
 #                  compatibility layer (`jest_to_rstest_compat`).
 #
 # Then it formats and lint-fixes the files it changed, and deletes the repo's
-# snapshot files so the new test runner writes them afresh.
+# Jest snapshot files so the new test runner writes them afresh.
 
 set -l usage "Usage: "(status basename)" <vitest|rstest|vitest-compat|rstest-compat> [repo-dir]"
 set -l codemod (path resolve (status dirname))
@@ -89,5 +89,11 @@ if set -q changed[1]
 end
 
 # Snapshot names and headers differ between test runners, so let the new
-# runner write the snapshot files afresh instead of mixing in stale ones.
-git ls-files -z -- '*.snap' | xargs -0 rm -f
+# runner write Jest's snapshot files afresh instead of mixing in stale ones.
+# Only Jest's: on a re-run, the snapshots the new runner wrote and that were
+# committed stay, so test runs compare against them instead of writing them.
+for snap in (git ls-files -- '*.snap')
+    if string match -q '// Jest Snapshot*' -- (head -n 1 $snap)
+        rm -f $snap
+    end
+end
