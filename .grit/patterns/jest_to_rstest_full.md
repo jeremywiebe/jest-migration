@@ -26,6 +26,9 @@ The pattern runs in passes, most of them shared with the other patterns:
    extends Jest's types. The setup file registers the matchers from
    `@testing-library/jest-dom/matchers` instead (`jest_to_vitest_full.md`).
 7. Every other Jest API: types, `jest.*` calls and custom matchers.
+8. Tables written as tagged templates (``it.each`...` ``) get `any` rows
+   (``it.each<any>`...` ``). Rstest types their fields `unknown`, where
+   Jest's types made them `any`.
 
 The test functions (`describe`, `it`, `expect`, the hooks) and `rs` stay
 globals, as they were under Jest: the config needs `globals: true`, and
@@ -49,6 +52,8 @@ they are.
 - **A comment after a removed jest-dom import stays**: `import
   "@testing-library/jest-dom"; // matchers` leaves `// matchers` on its own
   line. Delete it by hand.
+- **A tagged-template table with its own type** (``it.each<Row>`...` ``)
+  becomes ``it.each<any>`...` ``. Put the type back by hand.
 - **Multi-parameter `done` callbacks** (`(done, fail) => { ... }`) get
   wrapped as `new Promise((done, fail) => { ... })`, which makes `fail` the
   promise's `reject`.
@@ -61,6 +66,20 @@ language js
 
 // Every Jest API the shared rules leave, for a suite with no compatibility
 // layer.
+// Give tagged-template tables (`it.each\`...\``, `describe.each\`...\``)
+// `any` rows, as Jest's types did: Rstest types each row as
+// `Record<string, unknown>`, so every use of a field fails to type-check.
+pattern each_tables_any() {
+  file($body) where {
+    $body <: includes ".each`",
+    $body <: contains bubble call_expression($function, $arguments) as $call where {
+      $arguments <: template_string(),
+      $function <: member_expression(property=`each`),
+      $call => `$function<any>$arguments`
+    }
+  }
+}
+
 pattern jest_api_to_rstest() {
   file($body) where {
     // Every rule here matches `jest.` or `namespace jest`.
@@ -131,6 +150,7 @@ sequential {
   maybe jest_globals_imports(runner = `rs`, source = `"@rstest/core"`),
   maybe jest_dom_imports(),
   maybe jest_api_to_rstest(),
+  maybe each_tables_any(),
   // Off: test functions and `rs` stay globals. See `adjust_imports` in
   // jest_to_vitest_full.md.
   // maybe adjust_imports(runner = `rs`, source = `"@rstest/core"`, source_alt = `'@rstest/core'`),
@@ -176,6 +196,26 @@ describe("thing", () => {
         expect(mock).not.toHaveBeenCalled();
         expect(spy).not.toHaveBeenCalled();
     });
+});
+```
+
+## Give tagged-template tables any rows
+
+```javascript
+it.each`
+  x    | expected
+  ${1} | ${2}
+`("doubles $x", ({x, expected}) => {
+  expect(x * 2).toBe(expected);
+});
+```
+
+```javascript
+it.each<any>`
+  x    | expected
+  ${1} | ${2}
+`("doubles $x", ({x, expected}) => {
+  expect(x * 2).toBe(expected);
 });
 ```
 
