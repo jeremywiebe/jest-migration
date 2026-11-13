@@ -6,8 +6,8 @@
 #
 # Each round runs every runner once, in a different order each round, so
 # that drift during the session (heat, background load) doesn't favor one
-# runner. Every run writes its log and its JSON report to the results
-# folder, and a line to results.csv.
+# runner. Every run writes its log and its JSON report to a new folder in
+# timing/, and a line to that folder's results.csv.
 #
 # Usage: runner-timing.fish [rounds] [path]
 #   rounds: default 5
@@ -26,7 +26,7 @@ if not set -q RUNNER_TIMING_WORKTREES
     exit 1
 end
 set -l worktrees $RUNNER_TIMING_WORKTREES
-set -l out (path resolve (status dirname))/results/(date +%Y-%m-%d-%H%M%S)
+set -l out (path resolve (status dirname))/timing/(date +%Y-%m-%d-%H%M%S)
 mkdir -p $out; or exit 1
 
 # Run orders, cycled through by round: each runner goes first, middle and
