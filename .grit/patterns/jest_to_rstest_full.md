@@ -19,7 +19,8 @@ The pattern runs in passes, most of them shared with the other patterns:
    means (`jest_to_vitest_full.md`).
 4. The rewrites that don't depend on the runner: removing imports from
    `jest`, `done` callbacks, hook bodies and the custom matchers' result
-   type (`jest_to_vitest_full.md`).
+   type (`jest_to_vitest_full.md`). A callback with a destructured
+   parameter, such as a Playwright test's fixtures, isn't a `done` callback.
 5. Imports from `@jest/globals` come from `@rstest/core` instead, with
    `jest` renamed `rs` (`jest_to_vitest_full.md`).
 6. Imports of `@testing-library/jest-dom` are removed: that entry point
@@ -350,4 +351,30 @@ declare module "@rstest/core" {
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- rstest custom matcher augmentation
     interface AsymmetricMatchersContaining extends CustomMatchers {}
 }
+```
+
+## Leave a Playwright test's fixtures alone
+
+```javascript
+import { test, expect } from "@playwright/test";
+
+test("shows the title", async ({ page }) => {
+    await page.goto("/");
+    await expect(page).toHaveTitle("Home");
+});
+test("shows the heading", async function ({ page }) {
+    await expect(page.getByRole("heading")).toBeVisible();
+});
+```
+
+```javascript
+import { test, expect } from "@playwright/test";
+
+test("shows the title", async ({ page }) => {
+    await page.goto("/");
+    await expect(page).toHaveTitle("Home");
+});
+test("shows the heading", async function ({ page }) {
+    await expect(page.getByRole("heading")).toBeVisible();
+});
 ```

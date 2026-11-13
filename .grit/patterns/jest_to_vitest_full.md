@@ -19,7 +19,8 @@ The pattern runs in passes:
    means.
 4. The rewrites that don't depend on the runner: removing imports from
    `jest`, `done` callbacks, hook bodies and the custom matchers' result
-   type.
+   type. A callback with a destructured parameter, such as a Playwright
+   test's fixtures, isn't a `done` callback.
 5. Imports from `@jest/globals` come from `vitest` instead, with `jest`
    renamed `vi`.
 6. Imports of `@testing-library/jest-dom` are removed: that entry point
@@ -152,7 +153,9 @@ pattern jest_runner_neutral() {
       // Imports
       `import $_ from 'jest'` => .,
 
-      // done callback
+      // done callback. Jest passes one `done` function. A destructured
+      // parameter is a fixtures object, as Playwright's `test()` passes, so
+      // that callback isn't one.
       or {
         `$sym.$_($description, $callback)`,
         `$sym($description, $callback)`,
@@ -161,11 +164,13 @@ pattern jest_runner_neutral() {
         $callback <: or {
           // For matching `xxx => { ... }` & `(xxx) => { ... }`
           `$parameter => { $_ }` where {
-            $parameter <: not .
+            $parameter <: not .,
+            $parameter <: not contains object_pattern()
           },
           // For matching `function (xxx) { ... }`
           `function($parameters) { $_ }` where {
-            $parameters <: [$one, ...]
+            $parameters <: [$one, ...],
+            $one <: not contains object_pattern()
           }
         } => `() => new Promise($callback)`,
       },
@@ -663,5 +668,31 @@ describe("the env", () => {
         const value = (await import("./value")).value;
         expect(process.env.VITEST_WORKER_ID).toBe(value);
     });
+});
+```
+
+## Leave a Playwright test's fixtures alone
+
+```javascript
+import { test, expect } from "@playwright/test";
+
+test("shows the title", async ({ page }) => {
+    await page.goto("/");
+    await expect(page).toHaveTitle("Home");
+});
+test("shows the heading", async function ({ page }) {
+    await expect(page.getByRole("heading")).toBeVisible();
+});
+```
+
+```javascript
+import { test, expect } from "@playwright/test";
+
+test("shows the title", async ({ page }) => {
+    await page.goto("/");
+    await expect(page).toHaveTitle("Home");
+});
+test("shows the heading", async function ({ page }) {
+    await expect(page.getByRole("heading")).toBeVisible();
 });
 ```
