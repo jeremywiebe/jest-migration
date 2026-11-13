@@ -22,7 +22,9 @@ The pattern runs in passes, most of them shared with the other patterns:
    type (`jest_to_vitest_full.md`). A callback with a destructured
    parameter, such as a Playwright test's fixtures, isn't a `done` callback.
 5. Imports from `@jest/globals` come from `@rstest/core` instead, with
-   `jest` renamed `rs` (`jest_to_vitest_full.md`).
+   `jest` renamed `rs` (`jest_to_vitest_full.md`). A standalone
+   `import { rs } from "@rstest/core"`, as the compatibility-layer pattern
+   adds, is then removed, since `rs` stays a global.
 6. Imports of `@testing-library/jest-dom` are removed: that entry point
    extends Jest's types. The setup file registers the matchers from
    `@testing-library/jest-dom/matchers` instead (`jest_to_vitest_full.md`).
@@ -176,6 +178,7 @@ sequential {
   maybe bare_mock_implementations(),
   maybe jest_runner_neutral(),
   maybe jest_globals_imports(runner = `rs`, source = `"@rstest/core"`),
+  maybe runner_import_beside_globals(runner = `rs`, source = `"@rstest/core"`, source_alt = `'@rstest/core'`),
   maybe jest_dom_imports(),
   maybe last_call_optional(),
   maybe jest_matchers_beside_rstest(),
@@ -426,4 +429,58 @@ interface ScoreMatchers<R = unknown> {
 declare module "@rstest/core" {
     interface Assertion<T = any> extends ScoreMatchers<T> {}
 }
+```
+
+## Drop a standalone rs import when @jest/globals imports the same module
+
+```javascript
+import { describe, it } from "@jest/globals";
+import { rs } from "@rstest/core";
+
+rs.mock("./util");
+
+describe("thing", () => {
+    it("works", () => {
+        expect(rs.fn()).not.toHaveBeenCalled();
+    });
+});
+```
+
+```javascript
+import { describe, it } from "@rstest/core";
+
+rs.mock("./util");
+
+describe("thing", () => {
+    it("works", () => {
+        expect(rs.fn()).not.toHaveBeenCalled();
+    });
+});
+```
+
+## Import rs once when @jest/globals imports jest
+
+```javascript
+import { describe, it, jest } from "@jest/globals";
+import { rs } from "@rstest/core";
+
+rs.mock("./util");
+
+describe("thing", () => {
+    it("works", () => {
+        expect(jest.fn()).not.toHaveBeenCalled();
+    });
+});
+```
+
+```javascript
+import { describe, it, rs } from "@rstest/core";
+
+rs.mock("./util");
+
+describe("thing", () => {
+    it("works", () => {
+        expect(rs.fn()).not.toHaveBeenCalled();
+    });
+});
 ```

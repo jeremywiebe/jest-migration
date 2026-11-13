@@ -22,7 +22,9 @@ The pattern runs in passes:
    type. A callback with a destructured parameter, such as a Playwright
    test's fixtures, isn't a `done` callback.
 5. Imports from `@jest/globals` come from `vitest` instead, with `jest`
-   renamed `vi`.
+   renamed `vi`. A standalone `import { vi } from "vitest"`, as the
+   compatibility-layer pattern adds, is then removed, since `vi` stays a
+   global.
 6. Imports of `@testing-library/jest-dom` are removed: that entry point
    extends Jest's types. The setup file imports
    `@testing-library/jest-dom/vitest` instead.
@@ -210,6 +212,30 @@ pattern jest_globals_imports($runner, $source) {
   }
 }
 
+// The compatibility-layer patterns import `$runner` on its own, for module
+// mocks (`import { rs } from "@rstest/core"`). Once `jest_globals_imports`
+// points the file's `@jest/globals` import at the same module, the file
+// imports that module twice, and ESLint's import/no-duplicates fix merges the
+// two badly: it can import `$runner` twice or drop a comma. Remove the
+// standalone import instead: the full patterns leave `$runner` a global.
+// `$source_alt` is `$source` in the other quote style. Shared with
+// jest_to_rstest_full.md.
+pattern runner_import_beside_globals($runner, $source, $source_alt) {
+  file($body) where {
+    $body <: contains `import $alone_clause from $alone_src` as $alone where {
+      $alone_src <: or { $source, $source_alt },
+      // `{ rs }`: one name, the runner.
+      $alone_clause <: r"\{\s*\w+\s*\}",
+      $alone_clause <: contains $runner
+    },
+    $body <: contains `import $other_clause from $other_src` where {
+      $other_src <: or { $source, $source_alt },
+      $other_clause <: not $alone_clause
+    },
+    $alone => .
+  }
+}
+
 // Remove `import "@testing-library/jest-dom"`: that entry point adds its
 // matchers to Jest's types, and loads `@types/jest` with them. The runner's
 // setup file registers the matchers instead. Shared with
@@ -329,6 +355,7 @@ sequential {
   maybe bare_mock_implementations(),
   maybe jest_runner_neutral(),
   maybe jest_globals_imports(runner = `vi`, source = `'vitest'`),
+  maybe runner_import_beside_globals(runner = `vi`, source = `'vitest'`, source_alt = `"vitest"`),
   maybe jest_dom_imports(),
   maybe last_call_optional(),
   maybe jest_matchers_beside_vitest(),
@@ -744,4 +771,58 @@ interface ScoreMatchers<R = unknown> {
 declare module "vitest" {
     interface Matchers<R = unknown, T = unknown> extends ScoreMatchers<R> {}
 }
+```
+
+## Drop a standalone vi import when @jest/globals imports the same module
+
+```javascript
+import { describe, it } from "@jest/globals";
+import { vi } from "vitest";
+
+vi.mock("./util");
+
+describe("thing", () => {
+    it("works", () => {
+        expect(vi.fn()).not.toHaveBeenCalled();
+    });
+});
+```
+
+```javascript
+import { describe, it } from 'vitest';
+
+vi.mock("./util");
+
+describe("thing", () => {
+    it("works", () => {
+        expect(vi.fn()).not.toHaveBeenCalled();
+    });
+});
+```
+
+## Import vi once when @jest/globals imports jest
+
+```javascript
+import { describe, it, jest } from "@jest/globals";
+import { vi } from "vitest";
+
+vi.mock("./util");
+
+describe("thing", () => {
+    it("works", () => {
+        expect(jest.fn()).not.toHaveBeenCalled();
+    });
+});
+```
+
+```javascript
+import { describe, it, vi } from 'vitest';
+
+vi.mock("./util");
+
+describe("thing", () => {
+    it("works", () => {
+        expect(vi.fn()).not.toHaveBeenCalled();
+    });
+});
 ```
