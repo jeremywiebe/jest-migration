@@ -48,7 +48,9 @@ imports) is left for the compatibility layer: a setup file that defines
   declared, imported or used.
 - **`JEST_WORKER_ID` becomes `VITEST_WORKER_ID` everywhere**, in production code
   too, so code that detects a test run keeps working under Vitest. It then
-  no longer detects a Jest run.
+  no longer detects a Jest run. An expression that already checks
+  `VITEST_WORKER_ID` (such as `JEST_WORKER_ID || VITEST_WORKER_ID`) is left
+  alone.
 - **`await import()` returns the module namespace.** For a CommonJS module
   that assigns `module.exports`, use its `default` export.
 - **A `verifyRealTimers()` function** (in a `wait()` test helper) is
@@ -83,8 +85,13 @@ pattern jest_mocks_to_vitest() {
       },
 
       // Code that detects a test run by Jest's worker variable checks
-      // Vitest's instead.
-      `JEST_WORKER_ID` => `VITEST_WORKER_ID`,
+      // Vitest's instead, unless it already checks Vitest's too (as in
+      // `JEST_WORKER_ID || VITEST_WORKER_ID`).
+      `JEST_WORKER_ID` as $jest_worker_id where {
+        $jest_worker_id <: not within binary_expression() as $either where {
+          $either <: contains `VITEST_WORKER_ID`
+        }
+      } => `VITEST_WORKER_ID`,
 
       // An `inJest` flag that checks that variable no longer means
       // Jest only.
@@ -442,6 +449,18 @@ const workerId = process.env.JEST_WORKER_ID;
 
 ```javascript
 const workerId = process.env.VITEST_WORKER_ID;
+```
+
+## Leave a check that already reads Vitest's worker variable
+
+```javascript
+const inTest =
+    !!process.env.JEST_WORKER_ID || !!process.env.VITEST_WORKER_ID;
+```
+
+```javascript
+const inTest =
+    !!process.env.JEST_WORKER_ID || !!process.env.VITEST_WORKER_ID;
 ```
 
 ## Rename an inJest flag to inTest

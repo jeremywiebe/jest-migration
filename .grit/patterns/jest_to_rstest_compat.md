@@ -39,7 +39,9 @@ imports) is left for the compatibility layer: a setup file that defines
   declared, imported or used.
 - **`JEST_WORKER_ID` becomes `RSTEST_WORKER_ID` everywhere**, in production code
   too, so code that detects a test run keeps working under Rstest. It then
-  no longer detects a Jest run.
+  no longer detects a Jest run. An expression that already checks
+  `RSTEST_WORKER_ID` (such as `JEST_WORKER_ID || RSTEST_WORKER_ID`) is left
+  alone.
 - **An inserted `rs` import can leave a blank line inside an import group**
   when it sorts directly above an import with a leading comment (such as an
   `eslint-disable-next-line`): `import/order` won't fix across the comment.
@@ -72,8 +74,13 @@ pattern jest_mocks_to_rstest() {
       },
 
       // Code that detects a test run by Jest's worker variable checks
-      // Rstest's instead.
-      `JEST_WORKER_ID` => `RSTEST_WORKER_ID`,
+      // Rstest's instead, unless it already checks Rstest's too (as in
+      // `JEST_WORKER_ID || RSTEST_WORKER_ID`).
+      `JEST_WORKER_ID` as $jest_worker_id where {
+        $jest_worker_id <: not within binary_expression() as $either where {
+          $either <: contains `RSTEST_WORKER_ID`
+        }
+      } => `RSTEST_WORKER_ID`,
 
       // An `inJest` flag that checks that variable no longer means
       // Jest only.
@@ -304,6 +311,18 @@ const workerId = process.env.JEST_WORKER_ID;
 
 ```javascript
 const workerId = process.env.RSTEST_WORKER_ID;
+```
+
+## Leave a check that already reads Rstest's worker variable
+
+```javascript
+const inTest =
+    !!process.env.JEST_WORKER_ID || !!process.env.RSTEST_WORKER_ID;
+```
+
+```javascript
+const inTest =
+    !!process.env.JEST_WORKER_ID || !!process.env.RSTEST_WORKER_ID;
 ```
 
 ## Rename an inJest flag to inTest
