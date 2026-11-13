@@ -25,9 +25,12 @@ The pattern runs in passes:
 6. Imports of `@testing-library/jest-dom` are removed: that entry point
    extends Jest's types. The setup file imports
    `@testing-library/jest-dom/vitest` instead.
-7. Every other Jest API: types, `jest.*` calls and custom matchers.
+7. A mock's `lastCall` is read with `?.`, since it may be `undefined` under
+   Vitest's types (Jest's untyped mocks made it `any`).
+8. Every other Jest API: types, `jest.*` calls (and `typeof jest`) and
+   custom matchers.
 
-`jest_to_rstest_full.md` reuses passes 1, 3, 4, 5 and 6.
+`jest_to_rstest_full.md` reuses passes 1, 3, 4, 5, 6 and 7.
 
 The test functions (`describe`, `it`, `expect`, the hooks) and `vi` stay
 globals, as they were under Jest: the config needs `globals: true`, and
@@ -219,6 +222,16 @@ pattern jest_dom_imports() {
   }
 }
 
+// Read a mock's last call with `?.`: `jest.fn()` makes an untyped mock, so
+// Jest types `mock.lastCall` as `any`, but Vitest's and Rstest's mocks type
+// it as possibly `undefined`. Shared with jest_to_rstest_full.md.
+pattern last_call_optional() {
+  file($body) where {
+    $body <: includes "lastCall[",
+    $body <: contains bubble `$mock.lastCall[$index]` => `$mock.lastCall?.[$index]`
+  }
+}
+
 // Every Jest API the shared rules leave, for a suite with no compatibility
 // layer.
 pattern jest_api_to_vitest() {
@@ -249,6 +262,9 @@ pattern jest_api_to_vitest() {
         $sym = "MockInstance",
         $sym <: ensure_import_from(`'vitest'`)
       } => `MockInstance`,
+
+      // A check for the Jest global, such as a test-only guard
+      `typeof jest` => `typeof vi`,
 
       // Catch-all: any other jest.$sym => vi.$sym
       `jest.$sym` => `vi.$sym` where {
@@ -290,6 +306,7 @@ sequential {
   maybe jest_runner_neutral(),
   maybe jest_globals_imports(runner = `vi`, source = `'vitest'`),
   maybe jest_dom_imports(),
+  maybe last_call_optional(),
   maybe jest_api_to_vitest(),
   // Off: test functions and `vi` stay globals. See `adjust_imports`.
   // maybe adjust_imports(runner = `vi`, source = `'vitest'`, source_alt = `"vitest"`),
@@ -476,6 +493,32 @@ jest.mock('./some-path', () => ({ default: 'value' }));
 
 ```javascript
 vi.mock('./some-path', () => ({ default: 'value' }));
+```
+
+## Read a mock's last call with optional chaining
+
+```javascript
+const onChange = jest.fn();
+const value = onChange.mock.lastCall[0];
+```
+
+```javascript
+const onChange = vi.fn();
+const value = onChange.mock.lastCall?.[0];
+```
+
+## Rewrite a check for the Jest global
+
+```javascript
+if (typeof jest === "undefined") {
+  throw new Error("for use in tests only");
+}
+```
+
+```javascript
+if (typeof vi === "undefined") {
+  throw new Error("for use in tests only");
+}
 ```
 
 ## Remove jest-dom imports

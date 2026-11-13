@@ -25,8 +25,11 @@ The pattern runs in passes, most of them shared with the other patterns:
 6. Imports of `@testing-library/jest-dom` are removed: that entry point
    extends Jest's types. The setup file registers the matchers from
    `@testing-library/jest-dom/matchers` instead (`jest_to_vitest_full.md`).
-7. Every other Jest API: types, `jest.*` calls and custom matchers.
-8. Tables written as tagged templates (``it.each`...` ``) get `any` rows
+7. A mock's `lastCall` is read with `?.`, since it may be `undefined` under
+   Rstest's types (`jest_to_vitest_full.md`).
+8. Every other Jest API: types, `jest.*` calls (and `typeof jest`) and
+   custom matchers.
+9. Tables written as tagged templates (``it.each`...` ``) get `any` rows
    (``it.each<any>`...` ``). That's how Jest's types already typed them,
    implicitly; Rstest types their fields `unknown` instead.
 
@@ -114,6 +117,9 @@ pattern jest_api_to_rstest() {
         $sym <: ensure_import_from(`"@rstest/core"`)
       } => `MockInstance`,
 
+      // A check for the Jest global, such as a test-only guard
+      `typeof jest` => `typeof rs`,
+
       // Catch-all: any other jest.$sym => rs.$sym
       `jest.$sym` => `rs.$sym` where {
         $sym <: not `CustomMatcherResult`
@@ -151,6 +157,7 @@ sequential {
   maybe jest_runner_neutral(),
   maybe jest_globals_imports(runner = `rs`, source = `"@rstest/core"`),
   maybe jest_dom_imports(),
+  maybe last_call_optional(),
   maybe jest_api_to_rstest(),
   maybe each_tables_any(),
   // Off: test functions and `rs` stay globals. See `adjust_imports` in
@@ -219,6 +226,32 @@ it.each<any>`
 `("doubles $x", ({x, expected}) => {
   expect(x * 2).toBe(expected);
 });
+```
+
+## Read a mock's last call with optional chaining
+
+```javascript
+const onChange = jest.fn();
+const value = onChange.mock.lastCall[0];
+```
+
+```javascript
+const onChange = rs.fn();
+const value = onChange.mock.lastCall?.[0];
+```
+
+## Rewrite a check for the Jest global
+
+```javascript
+if (typeof jest === "undefined") {
+  throw new Error("for use in tests only");
+}
+```
+
+```javascript
+if (typeof rs === "undefined") {
+  throw new Error("for use in tests only");
+}
 ```
 
 ## Remove jest-dom imports
