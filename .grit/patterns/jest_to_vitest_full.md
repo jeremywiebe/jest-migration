@@ -29,7 +29,8 @@ The pattern runs in passes:
 7. A mock's `lastCall` is read with `?.`, since it may be `undefined` under
    Vitest's types (Jest's untyped mocks made it `any`).
 8. Every other Jest API: types, `jest.*` calls (and `typeof jest`) and
-   custom matchers.
+   custom matchers. A file that already declares its custom matchers for
+   Vitest only loses Jest's declaration.
 
 `jest_to_rstest_full.md` reuses passes 1, 3, 4, 5, 6 and 7.
 
@@ -239,6 +240,24 @@ pattern last_call_optional() {
 
 // Every Jest API the shared rules leave, for a suite with no compatibility
 // layer.
+// A file that already declares its custom matchers for Vitest, beside
+// Jest's, keeps that declaration and loses Jest's. The general rule in
+// `jest_api_to_vitest` would add a second Vitest declaration, and turn a
+// `Matchers` interface that only extends another into an empty one.
+pattern jest_matchers_beside_vitest() {
+  file($body) where {
+    $body <: includes "namespace jest",
+    or {
+      $body <: includes "declare module \"vitest\"",
+      $body <: includes "declare module 'vitest'",
+    },
+    $body <: contains bubble ambient_declaration() as $decl where {
+      $decl <: contains internal_module(name="jest"),
+      $decl <: contains interface_declaration(name="Matchers")
+    } => .
+  }
+}
+
 pattern jest_api_to_vitest() {
   file($body) where {
     // Every rule here matches `jest.` or `namespace jest`.
@@ -312,6 +331,7 @@ sequential {
   maybe jest_globals_imports(runner = `vi`, source = `'vitest'`),
   maybe jest_dom_imports(),
   maybe last_call_optional(),
+  maybe jest_matchers_beside_vitest(),
   maybe jest_api_to_vitest(),
   // Off: test functions and `vi` stay globals. See `adjust_imports`.
   // maybe adjust_imports(runner = `vi`, source = `'vitest'`, source_alt = `"vitest"`),
@@ -695,4 +715,33 @@ test("shows the title", async ({ page }) => {
 test("shows the heading", async function ({ page }) {
     await expect(page.getByRole("heading")).toBeVisible();
 });
+```
+
+## Keep custom matchers already declared for Vitest
+
+```javascript
+interface ScoreMatchers<R = unknown> {
+    toBeScored(): R;
+}
+
+declare global {
+    // eslint-disable-next-line @typescript-eslint/no-namespace
+    namespace jest {
+        interface Matchers<R> extends ScoreMatchers<R> {}
+    }
+}
+
+declare module "vitest" {
+    interface Matchers<R = unknown, T = unknown> extends ScoreMatchers<R> {}
+}
+```
+
+```javascript
+interface ScoreMatchers<R = unknown> {
+    toBeScored(): R;
+}
+
+declare module "vitest" {
+    interface Matchers<R = unknown, T = unknown> extends ScoreMatchers<R> {}
+}
 ```

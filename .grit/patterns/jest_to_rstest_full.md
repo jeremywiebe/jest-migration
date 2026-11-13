@@ -29,7 +29,8 @@ The pattern runs in passes, most of them shared with the other patterns:
 7. A mock's `lastCall` is read with `?.`, since it may be `undefined` under
    Rstest's types (`jest_to_vitest_full.md`).
 8. Every other Jest API: types, `jest.*` calls (and `typeof jest`) and
-   custom matchers.
+   custom matchers. A file that already declares its custom matchers for
+   Rstest only loses Jest's declaration.
 9. Tables written as tagged templates (``it.each`...` ``) get `any` rows
    (``it.each<any>`...` ``). That's how Jest's types already typed them,
    implicitly; Rstest types their fields `unknown` instead.
@@ -83,6 +84,24 @@ pattern each_tables_any() {
       $function <: member_expression(property=`each`),
       $call => `$function<any>$arguments`
     }
+  }
+}
+
+// A file that already declares its custom matchers for Rstest, beside
+// Jest's, keeps that declaration and loses Jest's. The general rule in
+// `jest_api_to_rstest` would add a second Rstest declaration, and turn a
+// `Matchers` interface that only extends another into an empty one.
+pattern jest_matchers_beside_rstest() {
+  file($body) where {
+    $body <: includes "namespace jest",
+    or {
+      $body <: includes "declare module \"@rstest/core\"",
+      $body <: includes "declare module '@rstest/core'",
+    },
+    $body <: contains bubble ambient_declaration() as $decl where {
+      $decl <: contains internal_module(name="jest"),
+      $decl <: contains interface_declaration(name="Matchers")
+    } => .
   }
 }
 
@@ -159,6 +178,7 @@ sequential {
   maybe jest_globals_imports(runner = `rs`, source = `"@rstest/core"`),
   maybe jest_dom_imports(),
   maybe last_call_optional(),
+  maybe jest_matchers_beside_rstest(),
   maybe jest_api_to_rstest(),
   maybe each_tables_any(),
   // Off: test functions and `rs` stay globals. See `adjust_imports` in
@@ -377,4 +397,33 @@ test("shows the title", async ({ page }) => {
 test("shows the heading", async function ({ page }) {
     await expect(page.getByRole("heading")).toBeVisible();
 });
+```
+
+## Keep custom matchers already declared for Rstest
+
+```javascript
+interface ScoreMatchers<R = unknown> {
+    toBeScored(): R;
+}
+
+declare global {
+    // eslint-disable-next-line @typescript-eslint/no-namespace
+    namespace jest {
+        interface Matchers<R> extends ScoreMatchers<R> {}
+    }
+}
+
+declare module "@rstest/core" {
+    interface Assertion<T = any> extends ScoreMatchers<T> {}
+}
+```
+
+```javascript
+interface ScoreMatchers<R = unknown> {
+    toBeScored(): R;
+}
+
+declare module "@rstest/core" {
+    interface Assertion<T = any> extends ScoreMatchers<T> {}
+}
 ```
